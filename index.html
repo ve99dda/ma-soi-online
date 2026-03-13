@@ -474,7 +474,13 @@ function renderGame(d){
 
 function renderAction(d){
   const a=document.getElementById('aarea'),mr=d.roles[myId],alive=d.alive&&d.alive[myId],p=d.phase;
-  if(!alive&&p!=='day_announce'&&p!=='hunter_shoot'){a.innerHTML='<div class="wm">💀 Bạn đã bị loại!</div>';return;}
+  // Allow dead hunter to see shoot UI
+  const isHunterShooting=p==='hunter_shoot'&&d.hunterPending===myId;
+  if(!alive&&p!=='day_announce'&&!isHunterShooting){
+    if(p==='hunter_shoot'){a.innerHTML='<div class="wm">🏹 Thợ Săn đang chọn mục tiêu...</div>';}
+    else{a.innerHTML='<div class="wm">💀 Bạn đã bị loại!</div>';}
+    return;
+  }
   if(p==='cupid_night')renderCupid(d,mr,a);
   else if(p==='night')renderNight(d,mr,a);
   else if(p==='day_announce')renderDA(d,a);
