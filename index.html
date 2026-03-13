@@ -159,6 +159,11 @@ body::before {
 .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 20px auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* SOUND TOGGLE */
+.sound-toggle { position: fixed; top: 16px; right: 16px; z-index: 50; width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 1.3rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.sound-toggle:hover { border-color: var(--accent); background: var(--bg-card-hover); }
+.sound-toggle.muted { opacity: 0.4; }
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -297,6 +302,7 @@ body::before {
 </div>
 
 <div class="toast" id="toast"></div>
+<button class="sound-toggle" id="sound-toggle" onclick="toggleSound()" title="Bật/Tắt âm thanh">🔊</button>
 
 <script>
 // ============================================
@@ -376,6 +382,7 @@ async function createRoom() {
   document.getElementById('role-config-card').style.display = 'block';
   renderRoleConfig();
   listenToRoom();
+  sfxJoin();
   toast('🏠 Phòng đã tạo!');
 }
 
@@ -402,6 +409,7 @@ async function joinRoom() {
   document.getElementById('role-config-card').style.display = isHost ? 'block' : 'none';
   if(isHost) renderRoleConfig();
   listenToRoom();
+  sfxJoin();
   toast('🎉 Đã vào phòng!');
 }
 
@@ -629,6 +637,7 @@ function renderGame(data) {
   }
 
   renderActionArea(data); renderGamePlayers(data); renderGameLog(data);
+  checkPhaseSound(data.phase);
 }
 
 function renderActionArea(data) {
@@ -675,6 +684,7 @@ async function cupidConfirm() {
   await roomRef.child('lovers').set(cupidSelections);
   await roomRef.child('nightActions/'+myId).set({ action:'cupid', target: cupidSelections.join(',') });
   cupidSelections = [];
+  sfxCupid();
   toast('💕 Đã ghép đôi tình nhân!');
   setTimeout(() => checkCupidComplete(gameState), 500);
 }
@@ -716,6 +726,7 @@ function renderNightAction(data, myRole, area) {
 }
 
 async function nightAct(action, targetId) {
+  sfxClick();
   await roomRef.child('nightActions/'+myId).set({ action, target: targetId });
   if(action==='seer' && gameState) {
     const role = gameState.roles[targetId];
@@ -807,7 +818,7 @@ function renderDayVote(data, area) {
   if(isHost) setTimeout(()=>checkVoteComplete(data), 500);
 }
 
-async function dayVote(targetId) { await roomRef.child('dayVotes/'+myId).set(targetId); }
+async function dayVote(targetId) { sfxClick(); await roomRef.child('dayVotes/'+myId).set(targetId); }
 
 async function checkVoteComplete(data) {
   if(!isHost || data.phase!=='day_vote') return;
@@ -880,8 +891,15 @@ function renderGamePlayers(data) {
   }).join('');
 }
 
+let lastLogCount = 0;
 function renderGameLog(data) {
   const log = data.log||[], el = document.getElementById('game-log');
+  // Play death sound for new kill entries
+  if(log.length > lastLogCount) {
+    const newEntries = log.slice(lastLogCount);
+    if(newEntries.some(l => l.type === 'kill')) sfxDeath();
+  }
+  lastLogCount = log.length;
   el.innerHTML = log.map(l=>`<div class="log-entry log-${l.type}">${l.text}</div>`).join('');
   el.scrollTop = el.scrollHeight;
 }
@@ -900,6 +918,7 @@ function addChatMessage(name, text) {
   div.className = 'chat-msg';
   div.innerHTML = `<span class="chat-author" style="color:${name===myName?'var(--gold)':'var(--blue)'}">${escHtml(name)}:</span> ${escHtml(text)}`;
   el.appendChild(div); el.scrollTop = el.scrollHeight;
+  if(name !== myName) sfxChat();
 }
 
 // ============================================
@@ -908,6 +927,10 @@ function addChatMessage(name, text) {
 function renderResult(data) {
   showScreen('screen-result');
   const w = data.winner;
+  // Play win or lose sound based on player's team
+  const myRole = data.roles[myId];
+  const myTeam = myRole ? ROLE_INFO[myRole].team : 'village';
+  if(w === myTeam) sfxWin(); else sfxLose();
   document.getElementById('result-icon').textContent = w==='wolf' ? '🐺' : '🎉';
   document.getElementById('result-title').textContent = w==='wolf' ? 'Sói thắng!' : 'Dân làng thắng!';
   document.getElementById('result-title').style.color = w==='wolf' ? 'var(--accent-glow)' : 'var(--green)';
@@ -926,8 +949,160 @@ async function backToLobby() {
   if(isHost && roomRef) await roomRef.update({state:'lobby',roles:null,alive:null,phase:null,nightNum:null,dayNum:null,nightActions:null,dayVotes:null,log:null,chat:null,winner:null,witchHeal:null,witchPoison:null,guardLastProtected:null,hunterPending:null,lovers:null});
   document.getElementById('role-card').style.display = 'none';
   chatLoaded = {};
+  lastLogCount = 0;
+  lastPhase = '';
   document.getElementById('chat-messages').innerHTML = '';
   showScreen('screen-lobby');
+}
+
+// ============================================
+// SOUND SYSTEM (Web Audio API)
+// ============================================
+let audioCtx = null;
+let soundMuted = false;
+let lastPhase = '';
+
+function getAudioCtx() {
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function toggleSound() {
+  soundMuted = !soundMuted;
+  const btn = document.getElementById('sound-toggle');
+  btn.textContent = soundMuted ? '🔇' : '🔊';
+  btn.classList.toggle('muted', soundMuted);
+}
+
+// Play a note: freq in Hz, duration in seconds, type = sine/square/sawtooth/triangle
+function playTone(freq, duration, type='sine', volume=0.3, delay=0) {
+  if(soundMuted) return;
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, ctx.currentTime + delay);
+    gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + delay + 0.02);
+    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + delay + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime + delay);
+    osc.stop(ctx.currentTime + delay + duration + 0.01);
+  } catch(e) {}
+}
+
+// Play noise burst (for dramatic effects)
+function playNoise(duration, volume=0.1) {
+  if(soundMuted) return;
+  try {
+    const ctx = getAudioCtx();
+    const bufferSize = ctx.sampleRate * duration;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for(let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i/bufferSize, 2);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const gain = ctx.createGain();
+    gain.gain.value = volume;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start();
+  } catch(e) {}
+}
+
+// === SOUND EFFECTS ===
+
+function sfxNight() {
+  // Eerie wolf howl: descending tones
+  playTone(400, 0.8, 'sine', 0.15, 0);
+  playTone(350, 0.6, 'sine', 0.12, 0.3);
+  playTone(280, 1.0, 'sine', 0.18, 0.6);
+  playTone(220, 1.2, 'triangle', 0.1, 0.8);
+  // Wind
+  playNoise(1.5, 0.04);
+}
+
+function sfxDay() {
+  // Morning rooster: bright ascending tones
+  playTone(523, 0.15, 'square', 0.12, 0);
+  playTone(659, 0.15, 'square', 0.14, 0.15);
+  playTone(784, 0.3, 'square', 0.16, 0.3);
+  playTone(880, 0.15, 'square', 0.12, 0.55);
+  playTone(1047, 0.4, 'square', 0.1, 0.7);
+}
+
+function sfxDeath() {
+  // Dark dramatic death
+  playTone(200, 0.3, 'sawtooth', 0.15, 0);
+  playTone(150, 0.4, 'sawtooth', 0.12, 0.2);
+  playTone(100, 0.6, 'sawtooth', 0.1, 0.4);
+  playNoise(0.5, 0.08);
+}
+
+function sfxVote() {
+  // Bell/gong for vote
+  playTone(800, 0.5, 'sine', 0.15, 0);
+  playTone(600, 0.4, 'sine', 0.1, 0.1);
+  playTone(400, 0.6, 'triangle', 0.08, 0.2);
+}
+
+function sfxClick() {
+  playTone(600, 0.06, 'sine', 0.08);
+}
+
+function sfxChat() {
+  playTone(1200, 0.05, 'sine', 0.05, 0);
+  playTone(1500, 0.05, 'sine', 0.04, 0.05);
+}
+
+function sfxWin() {
+  // Victory fanfare
+  playTone(523, 0.2, 'square', 0.12, 0);
+  playTone(659, 0.2, 'square', 0.12, 0.2);
+  playTone(784, 0.2, 'square', 0.12, 0.4);
+  playTone(1047, 0.5, 'square', 0.15, 0.6);
+  playTone(880, 0.15, 'sine', 0.08, 0.9);
+  playTone(1047, 0.6, 'sine', 0.12, 1.0);
+}
+
+function sfxLose() {
+  // Defeat: descending minor
+  playTone(440, 0.3, 'sawtooth', 0.1, 0);
+  playTone(370, 0.3, 'sawtooth', 0.1, 0.3);
+  playTone(330, 0.3, 'sawtooth', 0.1, 0.6);
+  playTone(262, 0.8, 'sawtooth', 0.12, 0.9);
+}
+
+function sfxHunter() {
+  // Gunshot
+  playNoise(0.15, 0.25);
+  playTone(100, 0.3, 'sawtooth', 0.15, 0.05);
+}
+
+function sfxCupid() {
+  // Romantic harp
+  playTone(523, 0.3, 'sine', 0.1, 0);
+  playTone(659, 0.3, 'sine', 0.1, 0.15);
+  playTone(784, 0.3, 'sine', 0.1, 0.3);
+  playTone(1047, 0.4, 'sine', 0.12, 0.45);
+}
+
+function sfxJoin() {
+  playTone(880, 0.1, 'sine', 0.08, 0);
+  playTone(1100, 0.15, 'sine', 0.1, 0.1);
+}
+
+// Trigger sound on phase change
+function checkPhaseSound(phase) {
+  if(phase === lastPhase) return;
+  lastPhase = phase;
+  if(phase === 'night' || phase === 'cupid_night') sfxNight();
+  else if(phase === 'day_announce') sfxDay();
+  else if(phase === 'day_vote') sfxVote();
+  else if(phase === 'hunter_shoot') sfxHunter();
 }
 
 // ============================================
@@ -936,6 +1111,11 @@ async function backToLobby() {
 window.addEventListener('load', () => {
   if(!initFirebase()) toast('❌ Lỗi kết nối Firebase!');
   document.getElementById('room-code-input').addEventListener('input', function(){ this.value = this.value.toUpperCase(); });
+  // Unlock audio on first user interaction
+  document.addEventListener('click', function unlock() {
+    getAudioCtx();
+    document.removeEventListener('click', unlock);
+  }, { once: true });
 });
 </script>
 </body>
