@@ -339,13 +339,15 @@ function leaveRoom(){
   if(roomRef&&myId){roomRef.child('players/'+myId).remove();roomRef.child('players').once('value',s=>{if(!s.exists()||Object.keys(s.val()||{}).length===0)roomRef.remove();});}
   cleanup();showS('s-home');
 }
-function cleanup(){unsubs.forEach(u=>{try{u();}catch(e){}});unsubs=[];if(timerInterval)clearInterval(timerInterval);if(dayTimerInterval)clearInterval(dayTimerInterval);gameState=null;chatLoaded={};lastPhase='';lastLogCnt=0;}
+function cleanup(){unsubs.forEach(u=>{try{u();}catch(e){}});unsubs=[];if(timerInterval)clearInterval(timerInterval);if(dayTimerInterval)clearInterval(dayTimerInterval);gameState=null;chatLoaded={};lastPhase='';lastLogCnt=0;wolfChatActive=false;}
 
 // ============================================
 // LISTENERS
 // ============================================
+let wolfChatActive=false;
 function listenRoom(){
   cleanup();
+  wolfChatActive=false;
   const cb=roomRef.on('value',snap=>{
     if(!snap.exists()){showS('s-home');toast('Phòng đã xóa');return;}
     const d=snap.val();
@@ -354,13 +356,19 @@ function listenRoom(){
       gameState=d;
       if(document.getElementById('s-lobby').classList.contains('active')||document.getElementById('s-result').classList.contains('active')){showS('s-game');showRole(d);}
       renderGame(d);
+      // Only start wolf chat after role is confirmed as wolf
+      if(!wolfChatActive&&isWolf())startWolfChat();
     }
     else if(d.state==='finished'){gameState=d;renderResult(d);}
   });
   unsubs.push(()=>roomRef.off('value',cb));
+  // Village chat — everyone
   const cc=roomRef.child('chat').on('child_added',s=>{const m=s.val();if(!chatLoaded[s.key]){chatLoaded[s.key]=true;addChat(m.name,m.text,'village');}});
   unsubs.push(()=>roomRef.child('chat').off('child_added',cc));
-  // Wolf chat listener
+}
+function startWolfChat(){
+  if(wolfChatActive)return;
+  wolfChatActive=true;
   const wcc=roomRef.child('wolf_chat').on('child_added',s=>{const m=s.val();if(!chatLoaded['w_'+s.key]){chatLoaded['w_'+s.key]=true;addChat(m.name,m.text,'wolf');}});
   unsubs.push(()=>roomRef.child('wolf_chat').off('child_added',wcc));
 }
@@ -501,7 +509,7 @@ function renderCupid(d,mr,a){
   if(mr==='cupid'){
     const ps=Object.entries(d.players).filter(([id])=>d.alive[id]);
     a.innerHTML=`<div class="na"><h3>💕 Cupid — Ghép đôi</h3><p>Chọn 2 người</p><div class="vg" id="cg">${ps.map(([id,p])=>`<button class="vb" onclick="cupSl('${id}',this)"><span class="va">${p.avatar}</span><span class="vn">${esc(p.name)}</span></button>`).join('')}</div><button class="btn bp bsm" id="ccbtn" onclick="cupOk()" style="margin-top:12px;display:none">💕 Xác nhận</button></div>`;
-  } else{a.innerHTML='<div class="wm">😴 Cupid đang ghép đôi...</div>';nightAct('sleep','_');}
+  } else{a.innerHTML='<div class="wm">😴 Cupid đang ghép đôi...</div>';nAct('sleep','_');}
 }
 function cupSl(id,btn){const i=cupSel.indexOf(id);if(i>=0){cupSel.splice(i,1);btn.classList.remove('sel');}else if(cupSel.length<2){cupSel.push(id);btn.classList.add('sel');}document.getElementById('ccbtn').style.display=cupSel.length===2?'flex':'none';}
 async function cupOk(){if(cupSel.length!==2)return;await roomRef.child('lovers').set(cupSel);await roomRef.child('nightActions/'+myId).set({action:'cupid',target:cupSel.join(',')});cupSel=[];sfxCupid();toast('💕 Ghép đôi thành công!');setTimeout(()=>{if(gameState)chkCupidDone(gameState);},500);}
@@ -855,7 +863,7 @@ function renderSeerJournal(){
 }
 
 // ============================================
-// CHAT (Village + Wolf)
+// CHAT (Village + Wolf - completely separated)
 // ============================================
 let activeChatTab='village';
 let wolfChatUnread=0;
@@ -874,39 +882,51 @@ function isNightPhase(){
 
 function updateWolfTab(){
   const tab=document.getElementById('tab-wolf');
-  if(isWolf()){
-    tab.style.display='block';
-    // Show unread badge
-    if(wolfChatUnread>0&&activeChatTab!=='wolf'){
-      tab.innerHTML=`🐺 Sói <span class="wolf-badge"></span>`;
-    } else {
-      tab.innerHTML='🐺 Sói';
-    }
-  } else {
+  const wolfDiv=document.getElementById('cmsg-wolf');
+  // HARD CHECK: non-wolves never see wolf tab or wolf messages
+  if(!isWolf()){
     tab.style.display='none';
-    if(activeChatTab==='wolf')switchChat('village');
+    wolfDiv.style.display='none';
+    wolfDiv.innerHTML=''; // Clear any leaked messages
+    if(activeChatTab==='wolf'){activeChatTab='village';syncChatUI();}
+    return;
+  }
+  tab.style.display='block';
+  if(wolfChatUnread>0&&activeChatTab!=='wolf'){
+    tab.innerHTML='🐺 Sói <span class="wolf-badge"></span>';
+  } else {
+    tab.innerHTML='🐺 Sói';
   }
 }
 
-function switchChat(tab){
-  activeChatTab=tab;
-  document.getElementById('tab-village').classList.toggle('active',tab==='village');
+function syncChatUI(){
+  const t=activeChatTab;
+  document.getElementById('tab-village').classList.toggle('active',t==='village');
   document.getElementById('tab-village').classList.remove('wolf-tab');
   const wt=document.getElementById('tab-wolf');
-  wt.classList.toggle('active',tab==='wolf');
-  if(tab==='wolf'){wt.classList.add('wolf-tab');wolfChatUnread=0;wt.innerHTML='🐺 Sói';}else{wt.classList.remove('wolf-tab');}
-  document.getElementById('cmsg').style.display=tab==='village'?'block':'none';
-  document.getElementById('cmsg-wolf').style.display=tab==='wolf'?'block':'none';
-  // Update placeholder
-  const inp=document.getElementById('cinp');
-  inp.placeholder=tab==='wolf'?'Nhắn cho đồng bọn Sói...':'Nhắn tin...';
+  wt.classList.toggle('active',t==='wolf');
+  if(t==='wolf')wt.classList.add('wolf-tab');else wt.classList.remove('wolf-tab');
+  document.getElementById('cmsg').style.display=t==='village'?'block':'none';
+  // Wolf div: only show if wolf AND on wolf tab
+  document.getElementById('cmsg-wolf').style.display=(t==='wolf'&&isWolf())?'block':'none';
+  document.getElementById('cinp').placeholder=t==='wolf'?'Nhắn cho đồng bọn Sói...':'Nhắn tin...';
+}
+
+function switchChat(tab){
+  // HARD BLOCK: non-wolves cannot switch to wolf tab
+  if(tab==='wolf'&&!isWolf()){toast('⛔ Bạn không phải Sói!');return;}
+  activeChatTab=tab;
+  if(tab==='wolf'){wolfChatUnread=0;}
+  syncChatUI();
   sfxClick();
 }
 
 function sendChat(){
   const inp=document.getElementById('cinp'),txt=inp.value.trim();
   if(!txt||!roomRef)return;
-  if(activeChatTab==='wolf'&&isWolf()){
+  // Double check: only wolves can send to wolf_chat
+  if(activeChatTab==='wolf'){
+    if(!isWolf()){toast('⛔');return;}
     roomRef.child('wolf_chat').push({name:myName,text:txt,time:Date.now(),playerId:myId});
   } else {
     roomRef.child('chat').push({name:myName,text:txt,time:Date.now()});
@@ -916,17 +936,13 @@ function sendChat(){
 
 function addChat(name,txt,channel){
   if(channel==='wolf'){
-    // Only wolves can see wolf chat
+    // TRIPLE CHECK: absolutely no wolf messages for non-wolves
     if(!isWolf())return;
     const el=document.getElementById('cmsg-wolf'),d=document.createElement('div');
     d.className='cmsg';
     d.innerHTML=`<span class="ca" style="color:var(--redg)">🐺 ${esc(name)}:</span> ${esc(txt)}`;
     el.appendChild(d);el.scrollTop=el.scrollHeight;
-    // Notify if not on wolf tab
-    if(activeChatTab!=='wolf'){
-      wolfChatUnread++;
-      updateWolfTab();
-    }
+    if(activeChatTab!=='wolf'){wolfChatUnread++;updateWolfTab();}
     if(name!==myName)sfxChat();
   } else {
     const el=document.getElementById('cmsg'),d=document.createElement('div');
@@ -974,8 +990,9 @@ async function backToLobby(){
   document.getElementById('seer-journal').style.display='none';
   document.getElementById('cmsg').innerHTML='';
   document.getElementById('cmsg-wolf').innerHTML='';
-  wolfChatUnread=0;activeChatTab='village';
-  switchChat('village');
+  wolfChatUnread=0;activeChatTab='village';wolfChatActive=false;
+  document.getElementById('tab-wolf').style.display='none';
+  syncChatUI();
   if(dayTimerInterval)clearInterval(dayTimerInterval);
   showS('s-lobby');
 }
