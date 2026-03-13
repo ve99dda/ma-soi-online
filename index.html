@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🐺 Ma Sói Online</title>
+<link href="https://fonts.googleapis.com/css2?family=Creepster&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+:root {
+  --bg-dark: #0a0a12;
+  --bg-card: #14141f;
+  --bg-card-hover: #1a1a2e;
+  --accent: #c0392b;
+  --accent-glow: #e74c3c;
+  --gold: #f1c40f;
+  --green: #27ae60;
+  --blue: #2980b9;
+  --purple: #8e44ad;
+  --text: #e8e8f0;
+  --text-dim: #7f8c9b;
+  --border: #2a2a3e;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: 'Nunito', sans-serif;
+  background: var(--bg-dark);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: 
+    radial-gradient(ellipse at 20% 50%, rgba(192,57,43,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(142,68,173,0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, rgba(41,128,185,0.05) 0%, transparent 50%);
+  z-index: 0;
+  animation: bgPulse 8s ease-in-out infinite alternate;
+}
+
+@keyframes bgPulse { 0% { opacity: 0.6; } 100% { opacity: 1; } }
+
+.container {
+  position: relative; z-index: 1;
+  max-width: 500px; margin: 0 auto; padding: 16px; min-height: 100vh;
+}
+
+.screen { display: none; }
+.screen.active { display: block; animation: fadeIn 0.4s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+/* HOME */
+.logo { text-align: center; padding: 40px 0 24px; }
+.logo h1 { font-family: 'Creepster', cursive; font-size: 3.2rem; color: var(--accent-glow); text-shadow: 0 0 30px rgba(231,76,60,0.4), 0 4px 8px rgba(0,0,0,0.5); letter-spacing: 2px; }
+.logo .wolf-icon { font-size: 4rem; display: block; margin-bottom: 8px; filter: drop-shadow(0 0 20px rgba(231,76,60,0.3)); animation: howl 3s ease-in-out infinite; }
+@keyframes howl { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+.logo p { color: var(--text-dim); font-size: 0.95rem; margin-top: 4px; }
+.home-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 32px; }
+
+/* BUTTONS */
+.btn { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 16px 24px; border: none; border-radius: 14px; font-family: 'Nunito', sans-serif; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: linear-gradient(135deg, var(--accent), #a93226); color: white; box-shadow: 0 4px 20px rgba(192,57,43,0.3); }
+.btn-primary:hover { box-shadow: 0 4px 28px rgba(192,57,43,0.5); }
+.btn-secondary { background: var(--bg-card); color: var(--text); border: 1.5px solid var(--border); }
+.btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--accent); }
+.btn-small { padding: 10px 18px; font-size: 0.9rem; border-radius: 10px; }
+.btn-gold { background: linear-gradient(135deg, #f39c12, #e67e22); color: #1a1a2e; box-shadow: 0 4px 20px rgba(243,156,18,0.3); }
+.btn-green { background: linear-gradient(135deg, var(--green), #1e8449); color: white; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* INPUT */
+.input-group { margin-bottom: 16px; }
+.input-group label { display: block; font-weight: 700; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.input-group input { width: 100%; padding: 14px 16px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--bg-card); color: var(--text); font-family: 'Nunito', sans-serif; font-size: 1.05rem; font-weight: 600; transition: border-color 0.2s; }
+.input-group input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(192,57,43,0.15); }
+.input-group input::placeholder { color: var(--text-dim); opacity: 0.6; }
+.room-code-input { text-align: center; font-size: 1.8rem !important; letter-spacing: 8px; text-transform: uppercase; }
+
+/* CARD */
+.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 12px; }
+.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.card-title { font-weight: 800; font-size: 1rem; }
+.badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; }
+.badge-red { background: rgba(231,76,60,0.15); color: var(--accent-glow); }
+.badge-green { background: rgba(39,174,96,0.15); color: var(--green); }
+
+/* LOBBY */
+.room-info { text-align: center; padding: 20px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; margin-bottom: 16px; }
+.room-info .room-code-display { font-family: 'Creepster', cursive; font-size: 2.8rem; color: var(--gold); letter-spacing: 6px; text-shadow: 0 0 20px rgba(241,196,15,0.3); margin: 8px 0; cursor: pointer; transition: transform 0.2s; }
+.room-code-display:hover { transform: scale(1.05); }
+.copy-hint { font-size: 0.8rem; color: var(--text-dim); }
+
+.player-list { list-style: none; }
+.player-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; margin-bottom: 6px; background: rgba(255,255,255,0.02); }
+.player-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+.player-name { flex: 1; font-weight: 700; }
+
+/* GAME PHASE */
+.phase-header { text-align: center; padding: 24px 16px; border-radius: 16px; margin-bottom: 16px; }
+.phase-night { background: linear-gradient(135deg, #0c0c1a, #1a1a3e); border: 1px solid #2a2a5e; }
+.phase-day { background: linear-gradient(135deg, #2c1810, #3d2415); border: 1px solid #5a3520; }
+.phase-header h2 { font-family: 'Creepster', cursive; font-size: 1.8rem; margin-bottom: 4px; }
+.phase-header p { color: var(--text-dim); font-size: 0.9rem; }
+.phase-night h2 { color: #7f8fff; }
+.phase-day h2 { color: #f39c12; }
+
+/* ROLE CARD */
+.role-reveal { text-align: center; padding: 32px 20px; background: var(--bg-card); border: 2px solid var(--border); border-radius: 20px; margin-bottom: 16px; }
+.role-reveal .role-icon { font-size: 4rem; margin-bottom: 12px; }
+.role-reveal .role-name { font-family: 'Creepster', cursive; font-size: 2rem; margin-bottom: 8px; }
+.role-reveal .role-desc { color: var(--text-dim); font-size: 0.9rem; line-height: 1.5; white-space: pre-line; }
+
+/* VOTE */
+.vote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.vote-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 8px; border-radius: 12px; border: 2px solid var(--border); background: var(--bg-card); color: var(--text); cursor: pointer; font-family: 'Nunito', sans-serif; transition: all 0.2s; }
+.vote-btn:hover { border-color: var(--accent); background: var(--bg-card-hover); }
+.vote-btn.selected { border-color: var(--accent-glow); background: rgba(231,76,60,0.1); }
+.vote-btn.dead { opacity: 0.3; pointer-events: none; }
+.vote-btn .vote-avatar { font-size: 1.5rem; }
+.vote-btn .vote-name { font-weight: 700; font-size: 0.85rem; }
+.vote-btn .vote-count { font-size: 0.75rem; color: var(--text-dim); }
+
+/* GAME LOG */
+.game-log { max-height: 200px; overflow-y: auto; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 12px; margin-top: 12px; }
+.log-entry { padding: 6px 0; font-size: 0.85rem; color: var(--text-dim); border-bottom: 1px solid rgba(255,255,255,0.03); animation: fadeIn 0.3s ease; }
+.log-entry:last-child { border-bottom: none; }
+.log-entry.log-kill { color: var(--accent-glow); }
+.log-entry.log-save { color: var(--green); }
+.log-entry.log-info { color: var(--blue); }
+.log-entry.log-vote { color: var(--gold); }
+
+/* CHAT */
+.chat-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; margin-top: 12px; overflow: hidden; }
+.chat-messages { max-height: 160px; overflow-y: auto; padding: 12px; }
+.chat-msg { margin-bottom: 8px; font-size: 0.85rem; }
+.chat-msg .chat-author { font-weight: 800; margin-right: 6px; }
+.chat-input-row { display: flex; border-top: 1px solid var(--border); }
+.chat-input-row input { flex: 1; padding: 12px; border: none; background: transparent; color: var(--text); font-family: 'Nunito', sans-serif; font-size: 0.9rem; }
+.chat-input-row input:focus { outline: none; }
+.chat-input-row button { padding: 12px 16px; border: none; background: var(--accent); color: white; font-weight: 700; cursor: pointer; font-family: 'Nunito', sans-serif; }
+
+/* RESULT */
+.result-screen { text-align: center; padding: 40px 20px; }
+.result-screen .result-icon { font-size: 5rem; margin-bottom: 16px; }
+.result-screen h2 { font-family: 'Creepster', cursive; font-size: 2.2rem; margin-bottom: 8px; }
+
+/* TOAST */
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(100px); padding: 12px 24px; background: #2c3e50; color: white; border-radius: 12px; font-weight: 700; font-size: 0.9rem; z-index: 999; transition: transform 0.3s ease; white-space: nowrap; }
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+/* OVERLAY */
+.overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: center; justify-content: center; padding: 24px; }
+.overlay.active { display: flex; }
+.overlay-content { background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 28px; max-width: 420px; width: 100%; max-height: 80vh; overflow-y: auto; animation: fadeIn 0.3s ease; }
+
+.night-action { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 12px; text-align: center; }
+.night-action h3 { font-size: 1.1rem; margin-bottom: 4px; }
+.night-action p { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 12px; }
+.waiting-msg { color: var(--text-dim); font-style: italic; padding: 20px; text-align: center; }
+
+.back-btn { background: none; border: none; color: var(--text-dim); font-family: 'Nunito', sans-serif; font-size: 0.9rem; font-weight: 700; cursor: pointer; padding: 8px 0; margin-bottom: 12px; }
+.back-btn:hover { color: var(--text); }
+
+.spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 20px auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- HOME -->
+  <div id="screen-home" class="screen active">
+    <div class="logo">
+      <span class="wolf-icon">🐺</span>
+      <h1>MA SÓI</h1>
+      <p>Chơi online cùng bạn bè — Quản trò tự động</p>
+    </div>
+    <div class="home-actions">
+      <div class="input-group">
+        <label>Tên của bạn</label>
+        <input type="text" id="player-name" placeholder="Nhập tên..." maxlength="16">
+      </div>
+      <button class="btn btn-primary" onclick="createRoom()">🏠 Tạo phòng mới</button>
+      <button class="btn btn-secondary" onclick="showScreen('screen-join')">🚪 Vào phòng</button>
+    </div>
+    <div class="card" style="margin-top:24px;">
+      <div class="card-title" style="margin-bottom:10px;">📜 Vai trò trong game</div>
+      <div style="font-size:0.85rem; color:var(--text-dim); line-height:1.7;">
+        🐺 <b style="color:var(--accent-glow)">Sói</b> — Đêm chọn 1 người để giết<br>
+        👁️ <b style="color:var(--blue)">Tiên Tri</b> — Đêm soi 1 người để biết vai<br>
+        🛡️ <b style="color:var(--green)">Bảo Vệ</b> — Đêm bảo vệ 1 người khỏi sói<br>
+        🧙 <b style="color:var(--purple)">Phù Thủy</b> — Có 1 bình cứu & 1 bình độc<br>
+        🏹 <b style="color:var(--gold)">Thợ Săn</b> — Khi chết, bắn hạ 1 người<br>
+        👨‍🌾 <b>Dân Làng</b> — Ban ngày vote treo cổ sói
+      </div>
+    </div>
+  </div>
+
+  <!-- JOIN -->
+  <div id="screen-join" class="screen">
+    <button class="back-btn" onclick="showScreen('screen-home')">← Quay lại</button>
+    <div class="logo" style="padding-top:20px;">
+      <span class="wolf-icon" style="font-size:3rem;">🚪</span>
+      <h1 style="font-size:2.2rem;">VÀO PHÒNG</h1>
+    </div>
+    <div class="input-group">
+      <label>Mã phòng</label>
+      <input type="text" id="room-code-input" class="room-code-input" placeholder="XXXX" maxlength="4">
+    </div>
+    <button class="btn btn-primary" onclick="joinRoom()">Vào phòng</button>
+  </div>
+
+  <!-- LOBBY -->
+  <div id="screen-lobby" class="screen">
+    <div class="room-info">
+      <div style="font-size:0.8rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:2px;">Mã phòng</div>
+      <div class="room-code-display" id="lobby-room-code" onclick="copyRoomCode()">----</div>
+      <div class="copy-hint">Nhấn để copy — Gửi cho bạn bè</div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">👥 Người chơi (<span id="player-count">0</span>/12)</span>
+        <span class="badge badge-green" id="min-player-badge">Cần thêm người</span>
+      </div>
+      <ul class="player-list" id="player-list"></ul>
+    </div>
+    <div id="host-controls" style="display:none;">
+      <button class="btn btn-gold" id="start-game-btn" onclick="startGame()" disabled>⚔️ Bắt đầu trò chơi</button>
+    </div>
+    <button class="btn btn-secondary btn-small" onclick="leaveRoom()" style="margin-top:8px;">🚪 Rời phòng</button>
+  </div>
+
+  <!-- GAME -->
+  <div id="screen-game" class="screen">
+    <div id="phase-header" class="phase-header phase-night">
+      <h2 id="phase-title">🌙 Đêm 1</h2>
+      <p id="phase-subtitle">Làng đang chìm vào giấc ngủ...</p>
+    </div>
+    <div class="role-reveal" id="role-card" style="display:none;">
+      <div class="role-icon" id="role-icon">🐺</div>
+      <div class="role-name" id="role-name">Sói</div>
+      <div class="role-desc" id="role-desc"></div>
+    </div>
+    <div id="action-area"></div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px;">📜 Nhật ký trò chơi</div>
+      <div class="game-log" id="game-log"></div>
+    </div>
+    <div class="chat-box" id="chat-box">
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chat-input" placeholder="Nhắn tin..." onkeypress="if(event.key==='Enter')sendChat()">
+        <button onclick="sendChat()">Gửi</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <div class="card-title" style="margin-bottom:8px;">💀 Tình trạng</div>
+      <ul class="player-list" id="game-player-list"></ul>
+    </div>
+  </div>
+
+  <!-- RESULT -->
+  <div id="screen-result" class="screen">
+    <div class="result-screen">
+      <div class="result-icon" id="result-icon">🐺</div>
+      <h2 id="result-title">Sói thắng!</h2>
+      <p id="result-desc" style="color:var(--text-dim);"></p>
+      <div class="card" id="result-roles" style="margin-top:20px; text-align:left;"></div>
+      <button class="btn btn-primary" onclick="backToLobby()" style="margin-top:20px;">🏠 Về phòng chờ</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+
+<script>
+// ============================================
+// MA SÓI ONLINE - GAME ENGINE
+// ============================================
+
+const AVATARS = ['🧑','👩','🧔','👱','👲','🧕','👳','🧑‍🦰','👩‍🦱','🧑‍🦳','👨‍🦲','🧓'];
+const ROLE_INFO = {
+  wolf:     { name:'Sói',      icon:'🐺', desc:'Bạn là SÓI. Mỗi đêm, bầu chọn cùng đồng bọn để giết 1 người.', team:'wolf',    color:'#e74c3c' },
+  seer:     { name:'Tiên Tri', icon:'👁️', desc:'Bạn là TIÊN TRI. Mỗi đêm, chọn 1 người để soi vai trò.', team:'village', color:'#2980b9' },
+  guard:    { name:'Bảo Vệ',   icon:'🛡️', desc:'Bạn là BẢO VỆ. Mỗi đêm, chọn 1 người để bảo vệ (không bảo vệ cùng 1 người 2 đêm liên tiếp).', team:'village', color:'#27ae60' },
+  witch:    { name:'Phù Thủy', icon:'🧙', desc:'Bạn là PHÙ THỦY. Có 1 bình cứu sống và 1 bình thuốc độc, mỗi bình dùng 1 lần.', team:'village', color:'#8e44ad' },
+  hunter:   { name:'Thợ Săn',  icon:'🏹', desc:'Bạn là THỢ SĂN. Khi bị giết, bạn được bắn hạ 1 người.', team:'village', color:'#f39c12' },
+  villager: { name:'Dân Làng', icon:'👨‍🌾', desc:'Bạn là DÂN LÀNG. Ban ngày, hãy tìm ra sói và bỏ phiếu treo cổ.', team:'village', color:'#bdc3c7' },
+};
+
+let db = null, myId = null, myName = '', roomCode = '', roomRef = null, gameState = null, isHost = false;
+let timerInterval = null, unsubscribers = [];
+
+// ============================================
+// FIREBASE
+// ============================================
+function initFirebase() {
+  try {
+    const config = {
+      apiKey: "AIzaSyDQwnQXuaQQ4xVac9IAHnOPydG2YkfeKBc",
+      authDomain: "soihoang-342fd.firebaseapp.com",
+      databaseURL: "https://soihoang-342fd-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "soihoang-342fd",
+      storageBucket: "soihoang-342fd.firebasestorage.app",
+      messagingSenderId: "1009582776681",
+      appId: "1:1009582776681:web:daa27ea8a56d064b61ddf8",
+      measurementId: "G-TTPW9E8Z10"
+    };
+    if (!firebase.apps.length) firebase.initializeApp(config);
+    db = firebase.database();
+    return true;
+  } catch(e) { console.error('Firebase init error:', e); return false; }
+}
+
+// ============================================
+// UTILS
+// ============================================
+function showScreen(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500); }
+function genCode() { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let r = ''; for(let i=0;i<4;i++) r += c[Math.floor(Math.random()*c.length)]; return r; }
+function genId() { return 'p_' + Date.now().toString(36) + Math.random().toString(36).substr(2,4); }
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function getName() { const n = document.getElementById('player-name').value.trim(); if(!n) { toast('⚠️ Nhập tên trước nhé!'); return null; } return n; }
+function copyRoomCode() { navigator.clipboard.writeText(roomCode).then(()=>toast('📋 Đã copy mã phòng!')).catch(()=>{}); }
+
+// ============================================
+// ROOM
+// ============================================
+async function createRoom() {
+  const name = getName(); if(!name) return;
+  if(!db) { toast('❌ Lỗi kết nối Firebase!'); return; }
+  myName = name; myId = genId(); roomCode = genCode(); isHost = true;
+  roomRef = db.ref('rooms/' + roomCode);
+  await roomRef.set({ host: myId, state: 'lobby', createdAt: firebase.database.ServerValue.TIMESTAMP, players: { [myId]: { name: myName, avatar: AVATARS[Math.floor(Math.random()*AVATARS.length)], online: true } } });
+  roomRef.child('players/'+myId+'/online').onDisconnect().set(false);
+  showScreen('screen-lobby');
+  document.getElementById('lobby-room-code').textContent = roomCode;
+  document.getElementById('host-controls').style.display = 'block';
+  listenToRoom();
+  toast('🏠 Phòng đã tạo!');
+}
+
+async function joinRoom() {
+  const name = document.getElementById('player-name').value.trim();
+  if(!name) { toast('⚠️ Nhập tên ở trang chủ trước!'); return; }
+  if(!db) { toast('❌ Lỗi kết nối Firebase!'); return; }
+  const code = document.getElementById('room-code-input').value.trim().toUpperCase();
+  if(code.length !== 4) { toast('⚠️ Mã phòng 4 ký tự!'); return; }
+  myName = name; myId = genId(); roomCode = code;
+  roomRef = db.ref('rooms/' + roomCode);
+  const snap = await roomRef.once('value');
+  if(!snap.exists()) { toast('❌ Phòng không tồn tại!'); return; }
+  const data = snap.val();
+  if(data.state !== 'lobby') { toast('❌ Game đã bắt đầu!'); return; }
+  const pc = data.players ? Object.keys(data.players).length : 0;
+  if(pc >= 12) { toast('❌ Phòng đầy!'); return; }
+  await roomRef.child('players/'+myId).set({ name: myName, avatar: AVATARS[Math.floor(Math.random()*AVATARS.length)], online: true });
+  roomRef.child('players/'+myId+'/online').onDisconnect().set(false);
+  isHost = (data.host === myId);
+  showScreen('screen-lobby');
+  document.getElementById('lobby-room-code').textContent = roomCode;
+  document.getElementById('host-controls').style.display = isHost ? 'block' : 'none';
+  listenToRoom();
+  toast('🎉 Đã vào phòng!');
+}
+
+function leaveRoom() { if(roomRef && myId) roomRef.child('players/'+myId).remove(); cleanup(); showScreen('screen-home'); }
+function cleanup() { unsubscribers.forEach(u => { try{u();}catch(e){} }); unsubscribers = []; if(timerInterval) clearInterval(timerInterval); gameState = null; }
+
+// ============================================
+// LISTENERS
+// ============================================
+function listenToRoom() {
+  cleanup();
+  const cb = roomRef.on('value', snap => {
+    if(!snap.exists()) { showScreen('screen-home'); toast('Phòng đã bị xóa'); return; }
+    const data = snap.val();
+    if(data.state === 'lobby') renderLobby(data);
+    else if(data.state === 'playing') { gameState = data; if(document.getElementById('screen-lobby').classList.contains('active') || document.getElementById('screen-result').classList.contains('active')) { showScreen('screen-game'); showRoleCard(data); } renderGame(data); }
+    else if(data.state === 'finished') { gameState = data; renderResult(data); }
+  });
+  unsubscribers.push(() => roomRef.off('value', cb));
+  const chatCb = roomRef.child('chat').on('child_added', snap => { const m = snap.val(); addChatMessage(m.name, m.text); });
+  unsubscribers.push(() => roomRef.child('chat').off('child_added', chatCb));
+}
+
+// ============================================
+// LOBBY
+// ============================================
+function renderLobby(data) {
+  const players = data.players || {}, keys = Object.keys(players), count = keys.length;
+  document.getElementById('player-count').textContent = count;
+  const badge = document.getElementById('min-player-badge');
+  if(count >= 6) { badge.textContent = '✅ Sẵn sàng!'; badge.className = 'badge badge-green'; }
+  else { badge.textContent = `Cần thêm ${6-count} người`; badge.className = 'badge badge-red'; }
+  document.getElementById('player-list').innerHTML = keys.map((id,i) => `
+    <li class="player-item">
+      <div class="player-avatar" style="background:${players[id].online!==false ? 'rgba(39,174,96,0.15)':'rgba(255,255,255,0.05)'}">${players[id].avatar||AVATARS[i%AVATARS.length]}</div>
+      <span class="player-name">${escHtml(players[id].name)}${id===data.host?' 👑':''}${id===myId?' (Bạn)':''}</span>
+      <span>${players[id].online!==false?'🟢':'⚫'}</span>
+    </li>`).join('');
+  const btn = document.getElementById('start-game-btn'); if(btn) btn.disabled = count < 6;
+  isHost = (data.host === myId);
+  document.getElementById('host-controls').style.display = isHost ? 'block' : 'none';
+}
+
+// ============================================
+// START GAME
+// ============================================
+async function startGame() {
+  const snap = await roomRef.once('value'), data = snap.val();
+  const ids = Object.keys(data.players||{}), n = ids.length;
+  if(n<6) { toast('Cần ít nhất 6 người!'); return; }
+  
+  const roles = [];
+  if(n<=7) roles.push('wolf','wolf','seer','guard');
+  else if(n<=9) roles.push('wolf','wolf','seer','guard','witch');
+  else roles.push('wolf','wolf','wolf','seer','guard','witch','hunter');
+  while(roles.length < n) roles.push('villager');
+
+  // Shuffle roles
+  for(let i=roles.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [roles[i],roles[j]]=[roles[j],roles[i]]; }
+  const shuffled = [...ids]; for(let i=shuffled.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]]; }
+
+  const roleMap = {}, aliveMap = {};
+  shuffled.forEach((id,i) => { roleMap[id] = roles[i]; aliveMap[id] = true; });
+
+  await roomRef.update({ state:'playing', roles:roleMap, alive:aliveMap, phase:'night', nightNum:1, dayNum:0, nightActions:{}, dayVotes:{}, log:[], witchHeal:true, witchPoison:true, guardLastProtected:'', hunterPending:false });
+}
+
+// ============================================
+// GAME RENDER
+// ============================================
+function showRoleCard(data) {
+  const role = data.roles[myId]; if(!role) return;
+  const info = ROLE_INFO[role];
+  document.getElementById('role-card').style.display = 'block';
+  document.getElementById('role-icon').textContent = info.icon;
+  document.getElementById('role-name').textContent = info.name;
+  document.getElementById('role-name').style.color = info.color;
+  let desc = info.desc;
+  if(role === 'wolf') {
+    const wolves = Object.entries(data.roles).filter(([id,r]) => r==='wolf'&&id!==myId);
+    if(wolves.length>0) desc += '\n🐺 Đồng bọn: ' + wolves.map(([id])=>data.players[id]?.name).join(', ');
+  }
+  document.getElementById('role-desc').textContent = desc;
+}
+
+function renderGame(data) {
+  const phase = data.phase, header = document.getElementById('phase-header');
+  const title = document.getElementById('phase-title'), subtitle = document.getElementById('phase-subtitle');
+  if(phase==='night') { header.className='phase-header phase-night'; title.textContent=`🌙 Đêm ${data.nightNum}`; subtitle.textContent='Làng đang chìm vào giấc ngủ...'; }
+  else if(phase==='day_announce') { header.className='phase-header phase-day'; title.textContent=`☀️ Ngày ${data.dayNum||data.nightNum}`; subtitle.textContent='Bình minh lên, tin buồn đến...'; }
+  else if(phase==='day_vote') { header.className='phase-header phase-day'; title.textContent=`☀️ Bỏ phiếu — Ngày ${data.dayNum||data.nightNum}`; subtitle.textContent='Chọn người nghi ngờ nhất!'; }
+  else if(phase==='hunter_shoot') { header.className='phase-header phase-day'; title.textContent='🏹 Thợ Săn!'; subtitle.textContent='Thợ Săn được bắn 1 phát cuối!'; }
+  renderActionArea(data); renderGamePlayers(data); renderGameLog(data);
+}
+
+function renderActionArea(data) {
+  const area = document.getElementById('action-area'), myRole = data.roles[myId], amAlive = data.alive&&data.alive[myId], phase = data.phase;
+  if(!amAlive && phase!=='day_announce') { area.innerHTML = '<div class="waiting-msg">💀 Bạn đã bị loại. Hãy theo dõi!</div>'; return; }
+  if(phase==='night') renderNightAction(data, myRole, area);
+  else if(phase==='day_announce') renderDayAnnounce(data, area);
+  else if(phase==='day_vote') renderDayVote(data, area);
+  else if(phase==='hunter_shoot') renderHunterShoot(data, area);
+}
+
+function renderNightAction(data, myRole, area) {
+  const actions = data.nightActions||{};
+  if(actions[myId]) { area.innerHTML='<div class="waiting-msg">✅ Đã hành động. Đợi mọi người...</div>'; checkNightComplete(data); return; }
+  const alive = Object.entries(data.players).filter(([id])=>data.alive[id]&&id!==myId);
+
+  if(myRole==='wolf') {
+    area.innerHTML = `<div class="night-action"><h3>🐺 Sói thức dậy</h3><p>Chọn 1 người để giết</p><div class="vote-grid">${alive.map(([id,p])=>`<button class="vote-btn" onclick="nightAct('kill','${id}')"><span class="vote-avatar">${p.avatar}</span><span class="vote-name">${escHtml(p.name)}</span></button>`).join('')}</div></div>`;
+  } else if(myRole==='seer') {
+    area.innerHTML = `<div class="night-action"><h3>👁️ Tiên Tri thức dậy</h3><p>Chọn 1 người để soi</p><div class="vote-grid">${alive.map(([id,p])=>`<button class="vote-btn" onclick="nightAct('seer','${id}')"><span class="vote-avatar">${p.avatar}</span><span class="vote-name">${escHtml(p.name)}</span></button>`).join('')}</div></div>`;
+  } else if(myRole==='guard') {
+    const last = data.guardLastProtected||'';
+    const canProt = alive.filter(([id])=>id!==last);
+    area.innerHTML = `<div class="night-action"><h3>🛡️ Bảo Vệ thức dậy</h3><p>Chọn 1 người để bảo vệ</p><div class="vote-grid">${canProt.map(([id,p])=>`<button class="vote-btn" onclick="nightAct('guard','${id}')"><span class="vote-avatar">${p.avatar}</span><span class="vote-name">${escHtml(p.name)}</span></button>`).join('')}</div></div>`;
+  } else if(myRole==='witch') {
+    let html = `<div class="night-action"><h3>🧙 Phù Thủy thức dậy</h3><p>Chọn hành động</p><div style="display:flex;flex-direction:column;gap:8px;">`;
+    if(data.witchHeal) html += `<button class="btn btn-green btn-small" onclick="nightAct('witch_heal','_')">💚 Dùng bình cứu</button>`;
+    if(data.witchPoison) { html += `<p style="font-size:0.8rem;color:var(--text-dim);margin:4px 0">☠️ Hoặc đầu độc:</p><div class="vote-grid">`; html += alive.map(([id,p])=>`<button class="vote-btn" onclick="nightAct('witch_poison','${id}')"><span class="vote-avatar">${p.avatar}</span><span class="vote-name">${escHtml(p.name)}</span></button>`).join(''); html += '</div>'; }
+    html += `<button class="btn btn-secondary btn-small" onclick="nightAct('witch_skip','_')">⏭️ Không làm gì</button></div></div>`;
+    area.innerHTML = html;
+  } else {
+    area.innerHTML = '<div class="waiting-msg">😴 Bạn đang ngủ... Đợi bình minh.</div>';
+    nightAct('sleep','_');
+  }
+}
+
+async function nightAct(action, targetId) {
+  await roomRef.child('nightActions/'+myId).set({ action, target: targetId });
+  if(action==='seer' && gameState) {
+    const role = gameState.roles[targetId];
+    const team = ROLE_INFO[role].team==='wolf' ? '🐺 SÓI!' : '👨‍🌾 Phe dân';
+    toast(`👁️ ${gameState.players[targetId].name} là ${team}`);
+  }
+  setTimeout(() => { if(gameState) checkNightComplete(gameState); }, 800);
+}
+
+async function checkNightComplete(data) {
+  if(!isHost || data.phase!=='night') return;
+  const alive = data.alive||{}, actions = data.nightActions||{};
+  const aliveIds = Object.keys(alive).filter(id=>alive[id]);
+  if(!aliveIds.every(id=>actions[id])) return;
+
+  // Resolve
+  const wolves = aliveIds.filter(id=>data.roles[id]==='wolf');
+  const wolfTargets = wolves.map(id=>actions[id]?.target).filter(t=>t&&t!=='_');
+  const vc = {}; wolfTargets.forEach(t => vc[t]=(vc[t]||0)+1);
+  const wolfKill = Object.entries(vc).sort((a,b)=>b[1]-a[1])[0]?.[0]||null;
+
+  const guardId = aliveIds.find(id=>data.roles[id]==='guard');
+  const guardTarget = guardId ? actions[guardId]?.target : null;
+  const witchId = aliveIds.find(id=>data.roles[id]==='witch');
+  const wAct = witchId ? actions[witchId] : null;
+  let wHeal = data.witchHeal, wPoison = data.witchPoison, poisonTarget = null;
+  if(wAct) { if(wAct.action==='witch_heal') wHeal=false; if(wAct.action==='witch_poison') { poisonTarget=wAct.target; wPoison=false; } }
+
+  const deaths = [], newAlive = {...alive}, logs = [...(data.log||[])];
+  if(wolfKill) {
+    const guarded = wolfKill===guardTarget, healed = wAct?.action==='witch_heal';
+    if(!guarded && !healed) { deaths.push(wolfKill); newAlive[wolfKill]=false; logs.push({text:`☠️ ${data.players[wolfKill].name} đã bị sói giết!`,type:'kill'}); }
+    else if(guarded) logs.push({text:'🛡️ Bảo vệ đã cứu 1 người!',type:'save'});
+    else if(healed) logs.push({text:'🧙 Phù thủy đã cứu 1 người!',type:'save'});
+  }
+  if(poisonTarget && poisonTarget!=='_') { deaths.push(poisonTarget); newAlive[poisonTarget]=false; logs.push({text:`☠️ ${data.players[poisonTarget].name} chết bí ẩn trong đêm!`,type:'kill'}); }
+  if(deaths.length===0) logs.push({text:'🌅 Đêm bình yên, không ai chết!',type:'save'});
+
+  let hunterPending = false;
+  deaths.forEach(id => { if(data.roles[id]==='hunter') hunterPending = id; });
+
+  const winner = checkWin(newAlive, data.roles);
+  if(winner) { await roomRef.update({alive:newAlive,log:logs,state:'finished',winner}); return; }
+  if(hunterPending) { await roomRef.update({alive:newAlive,log:logs,phase:'hunter_shoot',hunterPending,nightActions:{},witchHeal:wHeal,witchPoison:wPoison,guardLastProtected:guardTarget||''}); return; }
+
+  await roomRef.update({alive:newAlive,log:logs,phase:'day_announce',dayNum:data.nightNum,nightActions:{},dayVotes:{},witchHeal:wHeal,witchPoison:wPoison,guardLastProtected:guardTarget||''});
+  setTimeout(() => roomRef.child('phase').set('day_vote'), 4000);
+}
+
+function checkWin(alive, roles) {
+  const ids = Object.keys(alive).filter(id=>alive[id]);
+  const w = ids.filter(id=>roles[id]==='wolf'), v = ids.filter(id=>roles[id]!=='wolf');
+  if(w.length===0) return 'village'; if(w.length>=v.length) return 'wolf'; return null;
+}
+
+function renderDayAnnounce(data, area) {
+  area.innerHTML = '<div class="night-action"><h3>☀️ Bình minh</h3><p>Xem nhật ký để biết đêm qua xảy ra gì...</p><div class="spinner"></div><p style="font-size:0.8rem;color:var(--text-dim);">Sắp bỏ phiếu...</p></div>';
+}
+
+function renderDayVote(data, area) {
+  const votes = data.dayVotes||{}, myVote = votes[myId], amAlive = data.alive[myId];
+  const alivePlayers = Object.entries(data.players).filter(([id])=>data.alive[id]);
+  const vc = {}; Object.values(votes).forEach(v => { if(v) vc[v]=(vc[v]||0)+1; });
+
+  area.innerHTML = `<div class="night-action"><h3>🗳️ Bỏ phiếu treo cổ</h3><p>Chọn người nghi là sói</p><div class="vote-grid">
+    ${alivePlayers.map(([id,p])=>`<button class="vote-btn ${myVote===id?'selected':''} ${!amAlive?'dead':''}" onclick="dayVote('${id}')" ${!amAlive?'disabled':''}><span class="vote-avatar">${p.avatar}</span><span class="vote-name">${escHtml(p.name)}</span><span class="vote-count">${vc[id]||0} phiếu</span></button>`).join('')}
+    <button class="vote-btn ${myVote==='skip'?'selected':''} ${!amAlive?'dead':''}" onclick="dayVote('skip')" ${!amAlive?'disabled':''}><span class="vote-avatar">⏭️</span><span class="vote-name">Bỏ qua</span><span class="vote-count">${vc['skip']||0} phiếu</span></button>
+  </div></div>`;
+  if(isHost) setTimeout(()=>checkVoteComplete(data), 500);
+}
+
+async function dayVote(targetId) { await roomRef.child('dayVotes/'+myId).set(targetId); }
+
+async function checkVoteComplete(data) {
+  if(!isHost || data.phase!=='day_vote') return;
+  const alive=data.alive||{}, votes=data.dayVotes||{};
+  const aliveIds = Object.keys(alive).filter(id=>alive[id]);
+  if(!aliveIds.every(id=>votes[id])) return;
+
+  const vc = {}; aliveIds.forEach(id => { const v=votes[id]; if(v) vc[v]=(vc[v]||0)+1; });
+  const sorted = Object.entries(vc).filter(([k])=>k!=='skip').sort((a,b)=>b[1]-a[1]);
+  const logs=[...(data.log||[])], newAlive={...alive};
+
+  if(sorted.length>0 && (sorted.length===1 || sorted[0][1]>sorted[1][1])) {
+    const elim = sorted[0][0]; newAlive[elim]=false;
+    const role = ROLE_INFO[data.roles[elim]];
+    logs.push({text:`🪢 ${data.players[elim].name} bị treo cổ! Vai trò: ${role.icon} ${role.name}`,type:'vote'});
+    if(data.roles[elim]==='hunter') { const w=checkWin(newAlive,data.roles); if(w){await roomRef.update({alive:newAlive,log:logs,state:'finished',winner:w});return;} await roomRef.update({alive:newAlive,log:logs,phase:'hunter_shoot',hunterPending:elim,dayVotes:{}}); return; }
+  } else { logs.push({text:'🤝 Hòa phiếu — không ai bị treo cổ',type:'info'}); }
+
+  const w = checkWin(newAlive, data.roles);
+  if(w) { await roomRef.update({alive:newAlive,log:logs,state:'finished',winner:w}); return; }
+  await roomRef.update({alive:newAlive,log:logs,phase:'night',nightNum:(data.nightNum||1)+1,dayVotes:{},nightActions:{}});
+}
+
+function renderHunterShoot(data, area) {
+  const hId = data.hunterPending, alive = Object.entries(data.players).filter(([id])=>data.alive[id]);
+  if(hId===myId) {
+    area.innerHTML = `<div class="night-action"><h3>🏹 Bạn là Thợ Săn!</h3><p>Bạn bị giết! Bắn hạ 1 người!</p><div class="vote-grid">${alive.map(([id,p])=>`<button class="vote-btn" onclick="hunterShoot('${id}')"><span class="vote-avatar">${p.avatar}</span><span class="vote-name">${escHtml(p.name)}</span></button>`).join('')}</div></div>`;
+  } else { area.innerHTML = '<div class="waiting-msg">🏹 Thợ Săn đang chọn mục tiêu...</div>'; }
+}
+
+async function hunterShoot(targetId) {
+  const data = gameState, newAlive={...data.alive}, logs=[...(data.log||[])];
+  newAlive[targetId]=false;
+  logs.push({text:`🏹 Thợ Săn bắn hạ ${data.players[targetId].name}! (${ROLE_INFO[data.roles[targetId]].icon} ${ROLE_INFO[data.roles[targetId]].name})`,type:'kill'});
+  const w = checkWin(newAlive, data.roles);
+  if(w) { await roomRef.update({alive:newAlive,log:logs,state:'finished',winner:w}); return; }
+  await roomRef.update({alive:newAlive,log:logs,phase:'night',nightNum:(data.nightNum||1)+1,hunterPending:false,dayVotes:{},nightActions:{}});
+}
+
+function renderGamePlayers(data) {
+  const list = document.getElementById('game-player-list'), players=data.players||{}, alive=data.alive||{};
+  list.innerHTML = Object.entries(players).map(([id,p]) => {
+    const a = alive[id];
+    return `<li class="player-item" style="${!a?'opacity:0.4':''}"><div class="player-avatar" style="background:${a?'rgba(39,174,96,0.15)':'rgba(192,57,43,0.15)'}">${p.avatar}</div><span class="player-name">${escHtml(p.name)}${id===myId?' (Bạn)':''}</span><span>${a?'❤️':'💀'}</span></li>`;
+  }).join('');
+}
+
+function renderGameLog(data) {
+  const log = data.log||[], el = document.getElementById('game-log');
+  el.innerHTML = log.map(l=>`<div class="log-entry log-${l.type}">${l.text}</div>`).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+// CHAT
+function sendChat() {
+  const input = document.getElementById('chat-input'), text = input.value.trim();
+  if(!text||!roomRef) return;
+  roomRef.child('chat').push({name:myName, text, time:Date.now()});
+  input.value = '';
+}
+function addChatMessage(name, text) {
+  const el = document.getElementById('chat-messages'), div = document.createElement('div');
+  div.className = 'chat-msg';
+  div.innerHTML = `<span class="chat-author" style="color:${name===myName?'var(--gold)':'var(--blue)'}">${escHtml(name)}:</span> ${escHtml(text)}`;
+  el.appendChild(div); el.scrollTop = el.scrollHeight;
+}
+
+// RESULT
+function renderResult(data) {
+  showScreen('screen-result');
+  const w = data.winner;
+  document.getElementById('result-icon').textContent = w==='wolf' ? '🐺' : '🎉';
+  document.getElementById('result-title').textContent = w==='wolf' ? 'Sói thắng!' : 'Dân làng thắng!';
+  document.getElementById('result-title').style.color = w==='wolf' ? 'var(--accent-glow)' : 'var(--green)';
+  document.getElementById('result-desc').textContent = w==='wolf' ? 'Bóng đêm nuốt chửng ngôi làng...' : 'Ánh sáng chiến thắng bóng tối!';
+  document.getElementById('result-roles').innerHTML = '<div class="card-title" style="margin-bottom:12px">📋 Vai trò</div>' +
+    Object.entries(data.roles||{}).map(([id,role]) => {
+      const info = ROLE_INFO[role], p = data.players[id];
+      return `<div class="player-item"><span style="font-size:1.3rem">${info.icon}</span><span class="player-name">${escHtml(p?.name||'???')}</span><span style="font-size:0.8rem;color:${info.color}">${info.name}</span><span>${data.alive[id]?'❤️':'💀'}</span></div>`;
+    }).join('');
+}
+
+async function backToLobby() {
+  if(isHost && roomRef) await roomRef.update({state:'lobby',roles:null,alive:null,phase:null,nightNum:null,dayNum:null,nightActions:null,dayVotes:null,log:null,chat:null,winner:null,witchHeal:null,witchPoison:null,guardLastProtected:null,hunterPending:null});
+  showScreen('screen-lobby');
+}
+
+// INIT
+window.addEventListener('load', () => {
+  if(!initFirebase()) toast('❌ Lỗi kết nối Firebase!');
+  document.getElementById('room-code-input').addEventListener('input', function(){ this.value = this.value.toUpperCase(); });
+});
+</script>
+</body>
+</html>
