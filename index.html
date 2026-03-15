@@ -280,7 +280,7 @@ async function joinRoom(){
 }
 
 function leaveRoom(){if(roomRef&&myId){roomRef.child('players/'+myId).remove();roomRef.child('players').once('value',s=>{if(!s.exists()||!Object.keys(s.val()||{}).length)roomRef.remove();});}cleanup();showS('s-home');}
-function cleanup(){unsubs.forEach(u=>{try{u();}catch(e){}});unsubs=[];if(dayTmr)clearInterval(dayTmr);gameState=null;chatLoaded={};lastPhase='';lastLogCnt=0;wolfChatOn=false;}
+function cleanup(){unsubs.forEach(u=>{try{u();}catch(e){}});unsubs=[];if(dayTmr)clearInterval(dayTmr);if(nightTmr)clearInterval(nightTmr);gameState=null;chatLoaded={};lastPhase='';lastLogCnt=0;wolfChatOn=false;}
 
 // ============================================
 // LISTEN
@@ -298,7 +298,7 @@ function listen(){
       if(!wolfChatOn&&isWolf(d))startWolfChat();
       // HOST resolves phases even if dead
       if(isHost){
-        if(d.phase==='night')chkNightDone(d);
+        if(d.phase==='night')chkStepDone(d);
         else if(d.phase==='day_discuss'){
           // Check if all alive players have voted during discuss phase
           const al=d.alive||{},vt=d.votes||{};
@@ -380,7 +380,7 @@ async function startGame(){
   const rm={},am={};sh.forEach((id,i)=>{rm[id]=roles[i];am[id]=true;});
   await roomRef.update({state:'playing',roles:rm,alive:am,phase:'night',nightNum:1,dayNum:0,acts:{},votes:{},log:[],chat:null,wolf_chat:null,
     witchSave:true,witchKill:true,guardLast:'',hunterPin:{},hunterPending:false,wolfTarget:null,
-    dayDeadline:null});
+    dayDeadline:null,nightStep:0,nightDeadline:Date.now()+30000,nightOrder:buildNightOrder(rm)});
 }
 
 // ============================================
@@ -403,7 +403,17 @@ function showRole(d){
 function renderGame(d){
   const p=d.phase,h=document.getElementById('phdr'),t=document.getElementById('ptit'),s=document.getElementById('psub'),tmr=document.getElementById('ptmr');
   tmr.style.display='none';
-  if(p==='night'){h.className='ph phn';t.textContent=`🌙 Đêm ${d.nightNum}`;s.textContent='Làng chìm vào giấc ngủ...';}
+  if(p==='night'){
+    h.className='ph phn';
+    t.textContent=`🌙 Đêm ${d.nightNum}`;
+    const nOrd=d.nightOrder||[];
+    const step=d.nightStep||0;
+    const activeRole=nOrd[step];
+    const roleNames={BaoVe:'🛡️ Bảo Vệ',SoiThuong:'🐺 Ma Sói',TienTri:'👁️ Tiên Tri',PhuThuy:'🧙 Phù Thủy',ThoSan:'🏹 Thợ Săn'};
+    s.textContent=activeRole?`${roleNames[activeRole]||activeRole} đang thức dậy... (${step+1}/${nOrd.length})`:'Đang xử lý...';
+    tmr.style.display='inline-flex';
+    startNightTmr(d);
+  }
   else if(p==='day_announce'){h.className='ph phd';t.textContent=`☀️ Ngày ${d.dayNum||d.nightNum}`;s.textContent='Bình minh lên...';}
   else if(p==='day_discuss'){h.className='ph phd';t.textContent=`💬 Thảo luận & Bỏ phiếu`;s.textContent='Chat thảo luận + vote bên dưới. Hết giờ = tự bỏ qua.';tmr.style.display='inline-flex';startDTmr(d);}
   else if(p==='day_vote'){h.className='ph phd';t.textContent=`🗳️ Đang xử lý phiếu...`;s.textContent='';}
@@ -427,15 +437,69 @@ function renderAction(d){
 }
 
 // ============================================
-// NIGHT
+// NIGHT (Sequential — 30s per role)
 // ============================================
+// Night order from reference: BaoVe → SoiThuong → TienTri → PhuThuy → ThoSan
+const NIGHT_SEQ=['BaoVe','SoiThuong','TienTri','PhuThuy','ThoSan'];
+
+function buildNightOrder(roles){
+  // Only include roles that exist and are alive
+  const present=new Set(Object.values(roles));
+  return NIGHT_SEQ.filter(r=>present.has(r));
+}
+
+let nightTmr;
+function startNightTmr(d){
+  if(nightTmr)clearInterval(nightTmr);
+  if(!d.nightDeadline)return;
+  nightTmr=setInterval(()=>{
+    const left=Math.max(0,Math.round((d.nightDeadline-Date.now())/1000));
+    const el=document.getElementById('tmr-txt');if(el)el.textContent=left;
+    const tm=document.getElementById('ptmr');if(tm)tm.classList.toggle('warn',left<=10);
+    if(left<=0&&isHost){
+      clearInterval(nightTmr);
+      autoSkipNightStep(d);
+    }
+  },1000);
+}
+
+async function autoSkipNightStep(d){
+  if(!isHost||d.phase!=='night')return;
+  const nOrd=d.nightOrder||[];
+  const step=d.nightStep||0;
+  const activeRole=nOrd[step];
+  if(!activeRole){resolveNight(d);return;}
+  // Auto-skip: set 'skip' for all alive players with this role who haven't acted
+  const al=d.alive||{},acts=d.acts||{};
+  const updates={};
+  Object.entries(d.roles).forEach(([id,r])=>{
+    if(r===activeRole&&al[id]&&!acts[id])updates['acts/'+id]={a:'skip',t:'skip'};
+  });
+  if(Object.keys(updates).length)await roomRef.update(updates);
+  // Advance
+  advanceNightStep(d);
+}
+
 function renderNight(d,mr,a){
+  const nOrd=d.nightOrder||[];
+  const step=d.nightStep||0;
+  const activeRole=nOrd[step];
   const acts=d.acts||{};
   const alv=Object.entries(d.players).filter(([id])=>d.alive[id]&&id!==myId);
   const alvAll=Object.entries(d.players).filter(([id])=>d.alive[id]);
 
-  // Wolf: special handling — show other wolves' votes even after acting
-  if(mr==='SoiThuong'){
+  // If my role is not the active role → sleeping
+  if(mr!==activeRole){
+    // Exception: wolves can still see wolf info during wolf step
+    if(activeRole==='SoiThuong'&&mr==='SoiThuong'){/* fall through */}
+    else {
+      a.innerHTML=`<div class="wm">😴 Bạn đang ngủ... Đợi đến lượt.</div>`;
+      return;
+    }
+  }
+
+  // === WOLF STEP ===
+  if(activeRole==='SoiThuong'&&mr==='SoiThuong'){
     const wolves=Object.keys(d.roles).filter(id=>d.roles[id]==='SoiThuong'&&d.alive[id]);
     const wolfVotes=wolves.filter(id=>acts[id]&&acts[id].a==='kill').map(id=>({id,name:d.players[id].name,target:acts[id].t}));
     let wolfInfo='';
@@ -449,46 +513,55 @@ function renderNight(d,mr,a){
       });
       wolfInfo+='</div>';
     }
-
     if(acts[myId]){
-      a.innerHTML=`<div class="na"><h3>🐺 Đã chọn mục tiêu</h3><p>Đợi đồng bọn... hoặc đổi ý</p>${wolfInfo}<button class="btn bs bsm" onclick="wolfReVote()" style="margin-top:10px">🔄 Đổi mục tiêu</button></div>`;
+      a.innerHTML=`<div class="na"><h3>🐺 Đã chọn mục tiêu</h3><p>Đợi đồng bọn...</p>${wolfInfo}<button class="btn bs bsm" onclick="wolfReVote()" style="margin-top:10px">🔄 Đổi mục tiêu</button></div>`;
       return;
     }
-
-    // Show targets with indicators of other wolves' votes
-    const otherWolfTargets={};
-    wolfVotes.filter(wv=>wv.id!==myId).forEach(wv=>{otherWolfTargets[wv.target]=(otherWolfTargets[wv.target]||0)+1;});
-
-    a.innerHTML=`<div class="na"><h3>🐺 Sói thức dậy</h3><p>Chọn 1 người để cắn. Dùng chat 🐺 để bàn bạc!</p>${wolfInfo}<div class="vg">${alv.map(([id,p])=>{
-      const wCnt=otherWolfTargets[id]||0;
-      const mark=wCnt?` <span style="color:var(--rg);font-size:.7rem">(${wCnt}🐺)</span>`:'';
+    const otherWT={};wolfVotes.filter(wv=>wv.id!==myId).forEach(wv=>{otherWT[wv.target]=(otherWT[wv.target]||0)+1;});
+    a.innerHTML=`<div class="na"><h3>🐺 Sói thức dậy</h3><p>Chọn 1 người. Dùng chat 🐺 bàn bạc!</p>${wolfInfo}<div class="vg">${alv.map(([id,p])=>{
+      const wCnt=otherWT[id]||0;const mark=wCnt?` <span style="color:var(--rg);font-size:.7rem">(${wCnt}🐺)</span>`:'';
       return `<button class="vb" onclick="nAct('kill','${id}')"><span class="va2">${p.avatar}</span><span class="vn2">${esc(p.name)}${mark}</span></button>`;
     }).join('')}<button class="vb" onclick="nAct('kill','skip')"><span class="va2">⏭️</span><span class="vn2">Không cắn</span></button></div></div>`;
     return;
   }
 
-  // Non-wolf: normal behavior
-  if(acts[myId]){a.innerHTML='<div class="wm">✅ Đã hành động. Đợi mọi người...</div>';return;}
+  // Already acted?
+  if(acts[myId]){a.innerHTML='<div class="wm">✅ Đã chọn xong!</div>';return;}
 
-  if(mr==='BaoVe'){
+  // === GUARD STEP ===
+  if(activeRole==='BaoVe'&&mr==='BaoVe'){
     const last=d.guardLast||'';
     const opts=alvAll.filter(([id])=>id!==last);
-    a.innerHTML=`<div class="na"><h3>🛡️ Bảo Vệ thức dậy</h3><p>Chọn 1 người để bảo vệ${last?' (không lặp lại)':''}</p><div class="vg">${opts.map(([id,p])=>`<button class="vb" onclick="nAct('guard','${id}')"><span class="va2">${p.avatar}</span><span class="vn2">${esc(p.name)}</span></button>`).join('')}<button class="vb" onclick="nAct('guard','skip')"><span class="va2">⏭️</span><span class="vn2">Không bảo vệ</span></button></div></div>`;
-  } else if(mr==='TienTri'){
+    a.innerHTML=`<div class="na"><h3>🛡️ Bảo Vệ thức dậy</h3><p>Chọn 1 người${last?' (không lặp lại)':''}</p><div class="vg">${opts.map(([id,p])=>`<button class="vb" onclick="nAct('guard','${id}')"><span class="va2">${p.avatar}</span><span class="vn2">${esc(p.name)}</span></button>`).join('')}<button class="vb" onclick="nAct('guard','skip')"><span class="va2">⏭️</span><span class="vn2">Không bảo vệ</span></button></div></div>`;
+  }
+  // === SEER STEP ===
+  else if(activeRole==='TienTri'&&mr==='TienTri'){
     a.innerHTML=`<div class="na"><h3>👁️ Tiên Tri thức dậy</h3><p>Chọn 1 người để soi</p><div class="vg">${alv.map(([id,p])=>`<button class="vb" onclick="nAct('seer','${id}')"><span class="va2">${p.avatar}</span><span class="vn2">${esc(p.name)}</span></button>`).join('')}<button class="vb" onclick="nAct('seer','skip')"><span class="va2">⏭️</span><span class="vn2">Không soi</span></button></div></div>`;
-  } else if(mr==='PhuThuy'){
+  }
+  // === WITCH STEP ===
+  else if(activeRole==='PhuThuy'&&mr==='PhuThuy'){
+    // Show who wolf bit (from wolf actions)
+    const wolves=Object.keys(d.roles).filter(id=>d.roles[id]==='SoiThuong'&&d.alive[id]);
+    const wTgts=wolves.map(id=>acts[id]?.t).filter(t=>t&&t!=='skip');
+    const vc2={};wTgts.forEach(t=>vc2[t]=(vc2[t]||0)+1);
+    const wolfTarget=Object.entries(vc2).sort((a,b)=>b[1]-a[1])[0]?.[0]||null;
+    const bittenName=wolfTarget?d.players[wolfTarget]?.name:null;
+
     let html='<div class="na"><h3>🧙 Phù Thủy thức dậy</h3>';
-    // Show who wolf is targeting (if available from other wolves' actions)
-    html+='<p>Chọn hành động</p><div style="display:flex;flex-direction:column;gap:8px">';
-    if(d.witchSave)html+='<button class="btn bgr bsm" onclick="nAct(\'witch_save\',\'_\')">💚 Dùng bình cứu (cứu người bị cắn)</button>';
+    if(bittenName)html+=`<p style="color:var(--rg)">🐺 Đêm nay <b>${esc(bittenName)}</b> bị Sói cắn!</p>`;
+    else html+='<p>Đêm nay không ai bị cắn</p>';
+    html+='<div style="display:flex;flex-direction:column;gap:8px">';
+    if(d.witchSave&&bittenName)html+=`<button class="btn bgr bsm" onclick="nAct('witch_save','_')">💚 Cứu ${esc(bittenName)}</button>`;
     if(d.witchKill){html+='<p style="font-size:.8rem;color:var(--dim);margin:4px 0">☠️ Đầu độc:</p><div class="vg">'+alv.map(([id,p])=>`<button class="vb" onclick="nAct('witch_kill','${id}')"><span class="va2">${p.avatar}</span><span class="vn2">${esc(p.name)}</span></button>`).join('')+'</div>';}
     html+='<button class="btn bs bsm" onclick="nAct(\'witch_skip\',\'_\')">⏭️ Không làm gì</button></div></div>';
     a.innerHTML=html;
-  } else if(mr==='ThoSan'){
+  }
+  // === HUNTER STEP ===
+  else if(activeRole==='ThoSan'&&mr==='ThoSan'){
     a.innerHTML=`<div class="na"><h3>🏹 Thợ Săn thức dậy</h3><p>Ghim 1 người — nếu bạn chết đêm nay, người bị ghim chết theo</p><div class="vg">${alv.map(([id,p])=>`<button class="vb" onclick="nAct('pin','${id}')"><span class="va2">${p.avatar}</span><span class="vn2">${esc(p.name)}</span></button>`).join('')}<button class="vb" onclick="nAct('pin','skip')"><span class="va2">⏭️</span><span class="vn2">Không ghim</span></button></div></div>`;
-  } else {
-    a.innerHTML='<div class="wm">😴 Bạn đang ngủ...</div>';
-    nAct('sleep','_');
+  }
+  else {
+    a.innerHTML='<div class="wm">😴 Đợi...</div>';
   }
 }
 
@@ -508,6 +581,8 @@ async function nAct(action,target){
     guardLog.push({night:gameState.nightNum,name,avatar:gameState.players[target].avatar,isSelf:target===myId});
   }
   renderSJ();renderGJ();
+  // Host: check if current step is complete → advance
+  if(isHost)setTimeout(()=>{if(gameState)chkStepDone(gameState);},300);
 }
 
 async function wolfReVote(){
@@ -516,13 +591,53 @@ async function wolfReVote(){
   toast('🔄 Đã hủy — chọn lại!');
 }
 
+function chkStepDone(d){
+  if(!isHost||d.phase!=='night')return;
+  const nOrd=d.nightOrder||[];
+  const step=d.nightStep||0;
+  const activeRole=nOrd[step];
+  if(!activeRole){resolveNight(d);return;}
+  const al=d.alive||{},acts=d.acts||{};
+  // Check if ALL alive players with this role have acted
+  const rolePlayers=Object.entries(d.roles).filter(([id,r])=>r===activeRole&&al[id]);
+  if(rolePlayers.every(([id])=>acts[id])){
+    advanceNightStep(d);
+  }
+}
+
+async function advanceNightStep(d){
+  if(!isHost)return;
+  const nOrd=d.nightOrder||[];
+  const nextStep=(d.nightStep||0)+1;
+  if(nextStep>=nOrd.length){
+    // All steps done → resolve
+    // Fetch fresh data first
+    const snap=await roomRef.once('value');
+    resolveNight(snap.val());
+  } else {
+    // Skip roles that have no alive players
+    let s=nextStep;
+    const al=d.alive||{};
+    while(s<nOrd.length){
+      const hasAlive=Object.entries(d.roles).some(([id,r])=>r===nOrd[s]&&al[id]);
+      if(hasAlive)break;
+      s++;
+    }
+    if(s>=nOrd.length){
+      const snap=await roomRef.once('value');
+      resolveNight(snap.val());
+    } else {
+      await roomRef.update({nightStep:s,nightDeadline:Date.now()+30000});
+    }
+  }
+}
+
 // ============================================
 // NIGHT RESOLUTION (HOST ONLY)
 // ============================================
-async function chkNightDone(d){
+async function resolveNight(d){
   if(!isHost||d.phase!=='night')return;
   const al=d.alive||{},acts=d.acts||{},ids=Object.keys(al).filter(id=>al[id]);
-  if(!ids.every(id=>acts[id]))return;
 
   // 1. Guard target
   const guardId=ids.find(id=>d.roles[id]==='BaoVe');
@@ -696,7 +811,8 @@ async function resolveVotes(d){
 
   const w=checkWin(newAlive,d.roles);
   if(w){await roomRef.update({alive:newAlive,log:logs,state:'finished',winner:w});return;}
-  await roomRef.update({alive:newAlive,log:logs,phase:'night',nightNum:(d.nightNum||1)+1,votes:{},acts:{}});
+  const nn=(d.nightNum||1)+1,nOrd=buildNightOrder(d.roles);
+  await roomRef.update({alive:newAlive,log:logs,phase:'night',nightNum:nn,votes:{},acts:{},nightStep:0,nightDeadline:Date.now()+30000,nightOrder:nOrd});
 }
 
 // ============================================
@@ -720,7 +836,8 @@ async function hShoot(t){
   }
   const w=checkWin(na,d.roles);
   if(w){await roomRef.update({alive:na,log:logs,state:'finished',winner:w});return;}
-  await roomRef.update({alive:na,log:logs,phase:'night',nightNum:(d.nightNum||1)+1,hunterPending:false,votes:{},acts:{}});
+  const nn=(d.nightNum||1)+1,nOrd=buildNightOrder(d.roles);
+  await roomRef.update({alive:na,log:logs,phase:'night',nightNum:nn,hunterPending:false,votes:{},acts:{},nightStep:0,nightDeadline:Date.now()+30000,nightOrder:nOrd});
 }
 
 // ============================================
@@ -819,14 +936,14 @@ function renderResult(d){
 }
 
 async function backToLobby(){
-  if(isHost&&roomRef)await roomRef.update({state:'lobby',roles:null,alive:null,phase:null,nightNum:null,dayNum:null,acts:null,votes:null,log:null,chat:null,wolf_chat:null,winner:null,witchSave:null,witchKill:null,guardLast:null,hunterPin:null,hunterPending:null,wolfTarget:null,dayDeadline:null});
+  if(isHost&&roomRef)await roomRef.update({state:'lobby',roles:null,alive:null,phase:null,nightNum:null,dayNum:null,acts:null,votes:null,log:null,chat:null,wolf_chat:null,winner:null,witchSave:null,witchKill:null,guardLast:null,hunterPin:null,hunterPending:null,wolfTarget:null,dayDeadline:null,nightStep:null,nightDeadline:null,nightOrder:null});
   document.getElementById('rcard').style.display='none';
   document.getElementById('sj-card').style.display='none';
   document.getElementById('gj-card').style.display='none';
   chatLoaded={};lastLogCnt=0;lastPhase='';seerLog=[];guardLog=[];wolfChatOn=false;wolfUnread=0;chatTab='v';
   document.getElementById('cm-v').innerHTML='';document.getElementById('cm-w').innerHTML='';
   document.getElementById('tab-w').style.display='none';syncChat();
-  if(dayTmr)clearInterval(dayTmr);showS('s-lobby');
+  if(dayTmr)clearInterval(dayTmr);if(nightTmr)clearInterval(nightTmr);showS('s-lobby');
 }
 
 // ============================================
