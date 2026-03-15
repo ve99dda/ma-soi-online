@@ -132,6 +132,29 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .stg{position:fixed;top:16px;right:16px;z-index:50;width:44px;height:44px;border-radius:50%;border:1.5px solid var(--brd);background:rgba(17,17,32,.9);color:var(--txt);font-size:1.3rem;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px);transition:all .2s}
 .stg:hover{border-color:var(--rg);transform:scale(1.05)}
 .stg.mut{opacity:.35}
+/* Help button */
+.hbtn{position:fixed;top:16px;right:68px;z-index:50;width:44px;height:44px;border-radius:50%;border:1.5px solid var(--brd);background:rgba(17,17,32,.9);color:var(--gld);font-size:1.2rem;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px);transition:all .2s;font-family:'Nunito',sans-serif;display:none}
+.hbtn:hover{border-color:var(--gld);transform:scale(1.05);box-shadow:0 0 16px rgba(241,196,15,.15)}
+/* Help overlay */
+.hov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto;backdrop-filter:blur(6px)}
+.hov.on{display:flex}
+.hovc{background:rgba(17,17,32,.97);border:1px solid var(--brd);border-radius:22px;padding:28px;max-width:460px;width:100%;margin-top:20px;animation:fi .3s ease;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.hovc .hclose{position:absolute;top:14px;right:14px;width:36px;height:36px;border-radius:50%;border:1.5px solid var(--brd);background:rgba(255,255,255,.04);color:var(--dim);font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;font-family:'Nunito',sans-serif}
+.hovc .hclose:hover{border-color:var(--rg);color:var(--rg);background:rgba(231,76,60,.06)}
+.hov h3{font-family:'Cinzel Decorative',serif;font-size:1.3rem;margin-bottom:16px;color:var(--gld)}
+.hov .my-role{padding:16px;border-radius:14px;margin-bottom:20px;border:1.5px solid;position:relative;overflow:hidden}
+.hov .my-role::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.03),transparent);pointer-events:none}
+.hov .my-role .mr-icon{font-size:2.5rem;margin-bottom:8px;display:block}
+.hov .my-role .mr-name{font-family:'Cinzel Decorative',serif;font-size:1.2rem;margin-bottom:6px}
+.hov .my-role .mr-desc{font-size:.85rem;color:var(--dim);line-height:1.5}
+.hov .all-roles{margin-top:4px}
+.hov .ar-item{display:flex;align-items:flex-start;gap:12px;padding:12px;border-radius:12px;margin-bottom:6px;background:rgba(255,255,255,.015);transition:background .2s}
+.hov .ar-item:hover{background:rgba(255,255,255,.035)}
+.hov .ar-item .ari-icon{font-size:1.5rem;min-width:30px;text-align:center;padding-top:2px}
+.hov .ar-item .ari-info{flex:1}
+.hov .ar-item .ari-name{font-weight:800;font-size:.9rem;margin-bottom:3px}
+.hov .ar-item .ari-desc{font-size:.78rem;color:var(--dim);line-height:1.4}
+.hov .ar-item .ari-count{font-size:.7rem;color:var(--dim);background:rgba(255,255,255,.04);padding:2px 8px;border-radius:10px;white-space:nowrap;align-self:center}
 .tmr{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(0,0,0,.35);border-radius:22px;font-weight:800;font-size:1.15rem;margin-top:10px;border:1px solid rgba(255,255,255,.04)}
 .tmr.warn{color:var(--rg);animation:pls .8s infinite;border-color:rgba(231,76,60,.2)}
 .sj{border-color:rgba(52,152,219,.2);background:linear-gradient(145deg,rgba(17,17,32,.9),rgba(52,152,219,.03))}
@@ -227,6 +250,18 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 <div class="tst" id="toast"></div>
 <button class="stg" id="snd-btn" onclick="togSnd()">🔊</button>
+<button class="hbtn" id="help-btn" onclick="toggleHelp()">?</button>
+
+<!-- Help Overlay -->
+<div class="hov" id="help-ov" onclick="if(event.target===this)toggleHelp()">
+  <div class="hovc">
+    <button class="hclose" onclick="toggleHelp()">✕</button>
+    <h3>📖 Hướng dẫn vai trò</h3>
+    <div id="help-my-role"></div>
+    <div style="font-weight:800;font-size:.9rem;margin-bottom:10px;color:var(--dim)">🎭 Tất cả vai trò trong trận:</div>
+    <div class="all-roles" id="help-all-roles"></div>
+  </div>
+</div>
 
 <script>
 // ============================================
@@ -264,7 +299,7 @@ function initFB(){try{const c={apiKey:"AIzaSyDQwnQXuaQQ4xVac9IAHnOPydG2YkfeKBc",
 // Sound
 let actx,sndOff=false;
 function gAC(){if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();return actx;}
-function togSnd(){sndOff=!sndOff;const b=document.getElementById('snd-btn');b.textContent=sndOff?'🔇':'🔊';b.classList.toggle('mut',sndOff);}
+function togSnd(){sndOff=!sndOff;const b=document.getElementById('snd-btn');b.textContent=sndOff?'🔇':'🔊';b.classList.toggle('mut',sndOff);if(sndOff)stopBgm();else if(gameState){const p=gameState.phase;if(p==='night')playBgm('night');else if(p&&p.startsWith('day'))playBgm('day');}}
 function pT(f,d,tp='sine',v=.3,dl=0){if(sndOff)return;try{const c=gAC(),o=c.createOscillator(),g=c.createGain();o.type=tp;o.frequency.value=f;g.gain.setValueAtTime(0,c.currentTime+dl);g.gain.linearRampToValueAtTime(v,c.currentTime+dl+.02);g.gain.linearRampToValueAtTime(0,c.currentTime+dl+d);o.connect(g);g.connect(c.destination);o.start(c.currentTime+dl);o.stop(c.currentTime+dl+d+.01);}catch(e){}}
 function pN(d,v=.1){if(sndOff)return;try{const c=gAC(),bs=c.sampleRate*d,buf=c.createBuffer(1,bs,c.sampleRate),dt=buf.getChannelData(0);for(let i=0;i<bs;i++)dt[i]=(Math.random()*2-1)*Math.pow(1-i/bs,2);const s=c.createBufferSource();s.buffer=buf;const g=c.createGain();g.gain.value=v;s.connect(g);g.connect(c.destination);s.start();}catch(e){}}
 const sfx={
@@ -312,6 +347,126 @@ function copyRC(){navigator.clipboard.writeText(roomCode).then(()=>toast('📋 �
 function isWolf(d){const data=d||gameState;if(!data||!data.roles||!myId)return false;return data.roles[myId]==='SoiThuong';}
 
 // ============================================
+// HELP OVERLAY
+// ============================================
+function toggleHelp(){
+  const ov=document.getElementById('help-ov');
+  ov.classList.toggle('on');
+  if(ov.classList.contains('on'))renderHelp();
+  sfx.click();
+}
+
+function renderHelp(){
+  const d=gameState;if(!d||!d.roles)return;
+  const myRole=d.roles[myId];
+  const info=R[myRole];
+
+  // My role
+  let myHtml='';
+  if(info){
+    let extra='';
+    if(myRole==='SoiThuong'){
+      const wolves=Object.entries(d.roles).filter(([id,r])=>r==='SoiThuong'&&id!==myId&&d.players[id]);
+      if(wolves.length)extra=`<div style="margin-top:8px;font-size:.82rem;color:var(--rg)">🐺 Đồng bọn: ${wolves.map(([id])=>d.players[id].name).join(', ')}</div>`;
+    }
+    myHtml=`<div class="my-role" style="border-color:${info.c}33;background:${info.c}08">
+      <span class="mr-icon">${info.i}</span>
+      <div class="mr-name" style="color:${info.c}">${info.n}</div>
+      <div class="mr-desc">${info.d}</div>
+      ${extra}
+    </div>`;
+  }
+  document.getElementById('help-my-role').innerHTML=myHtml;
+
+  // All roles in this game — count how many of each
+  const roleCounts={};
+  Object.values(d.roles).forEach(r=>roleCounts[r]=(roleCounts[r]||0)+1);
+
+  let allHtml='';
+  RKEYS.forEach(k=>{
+    if(!roleCounts[k])return;
+    const r=R[k];
+    const isMe=k===myRole;
+    allHtml+=`<div class="ar-item" style="${isMe?'background:'+r.c+'0a;border:1px solid '+r.c+'20;':''}">
+      <span class="ari-icon">${r.i}</span>
+      <div class="ari-info">
+        <div class="ari-name" style="color:${r.c}">${r.n}${isMe?' ← Bạn':''}</div>
+        <div class="ari-desc">${r.d}</div>
+      </div>
+      <span class="ari-count">${roleCounts[k]}x</span>
+    </div>`;
+  });
+  document.getElementById('help-all-roles').innerHTML=allHtml;
+}
+
+function showHelpBtn(show){
+  document.getElementById('help-btn').style.display=show?'flex':'none';
+}
+
+// ============================================
+// BACKGROUND MUSIC (Web Audio looping ambient)
+// ============================================
+let bgmPlaying='',bgmNodes=[],bgmGain=null;
+
+function stopBgm(){
+  bgmNodes.forEach(n=>{try{n.stop();}catch(e){}});
+  bgmNodes=[];bgmPlaying='';
+}
+
+function playBgm(type){
+  if(sndOff||type===bgmPlaying)return;
+  stopBgm();
+  bgmPlaying=type;
+  try{
+    const c=gAC();
+    bgmGain=c.createGain();
+    bgmGain.gain.value=0.06;// very quiet
+    bgmGain.connect(c.destination);
+
+    if(type==='night'){
+      // Eerie low drone + wind
+      const dr=c.createOscillator();dr.type='sine';dr.frequency.value=65;
+      const dr2=c.createOscillator();dr2.type='sine';dr2.frequency.value=98;
+      const lfo=c.createOscillator();lfo.type='sine';lfo.frequency.value=0.15;
+      const lfoG=c.createGain();lfoG.gain.value=8;
+      lfo.connect(lfoG);lfoG.connect(dr.frequency);
+      
+      const drG=c.createGain();drG.gain.value=0.5;
+      const drG2=c.createGain();drG2.gain.value=0.3;
+      dr.connect(drG);drG.connect(bgmGain);
+      dr2.connect(drG2);drG2.connect(bgmGain);
+      
+      // Noise for wind
+      const bs=c.sampleRate*4;
+      const buf=c.createBuffer(1,bs,c.sampleRate);
+      const dt=buf.getChannelData(0);
+      for(let i=0;i<bs;i++)dt[i]=(Math.random()*2-1);
+      const wind=c.createBufferSource();wind.buffer=buf;wind.loop=true;
+      const wf=c.createBiquadFilter();wf.type='lowpass';wf.frequency.value=300;
+      const wG=c.createGain();wG.gain.value=0.15;
+      wind.connect(wf);wf.connect(wG);wG.connect(bgmGain);
+      
+      dr.start();dr2.start();lfo.start();wind.start();
+      bgmNodes.push(dr,dr2,lfo,wind);
+    } else if(type==='day'){
+      // Warm bright pad
+      const notes=[262,330,392,523];
+      notes.forEach((f,i)=>{
+        const o=c.createOscillator();o.type='sine';o.frequency.value=f;
+        const g=c.createGain();g.gain.value=0.12-i*0.02;
+        // Gentle tremolo
+        const lfo=c.createOscillator();lfo.type='sine';lfo.frequency.value=0.3+i*0.1;
+        const lfoG=c.createGain();lfoG.gain.value=0.03;
+        lfo.connect(lfoG);lfoG.connect(g.gain);
+        o.connect(g);g.connect(bgmGain);
+        o.start();lfo.start();
+        bgmNodes.push(o,lfo);
+      });
+    }
+  }catch(e){}
+}
+
+// ============================================
 // ROOM
 // ============================================
 async function createRoom(){
@@ -347,7 +502,7 @@ async function joinRoom(){
 }
 
 function leaveRoom(){if(roomRef&&myId){roomRef.child('players/'+myId).remove();roomRef.child('players').once('value',s=>{if(!s.exists()||!Object.keys(s.val()||{}).length)roomRef.remove();});}cleanup();showS('s-home');}
-function cleanup(){unsubs.forEach(u=>{try{u();}catch(e){}});unsubs=[];if(dayTmr)clearInterval(dayTmr);if(nightTmr)clearInterval(nightTmr);gameState=null;chatLoaded={};lastPhase='';lastLogCnt=0;wolfChatOn=false;lastStepRole='';}
+function cleanup(){unsubs.forEach(u=>{try{u();}catch(e){}});unsubs=[];if(dayTmr)clearInterval(dayTmr);if(nightTmr)clearInterval(nightTmr);gameState=null;chatLoaded={};lastPhase='';lastLogCnt=0;wolfChatOn=false;lastStepRole='';stopBgm();}
 
 // ============================================
 // LISTEN
@@ -500,6 +655,11 @@ function renderGame(d){
   else if(p==='hunter_shoot'){h.className='ph phd';t.textContent='🏹 Thợ Săn!';s.textContent='Bắn 1 phát cuối!';}
   renderAction(d);renderGP(d);renderLog(d);renderSJ();renderGJ();
   chkSnd(p);updateWT(d);
+  showHelpBtn(true);
+  // Background music
+  if(p==='night')playBgm('night');
+  else if(p.startsWith('day'))playBgm('day');
+  else stopBgm();
 }
 
 function renderAction(d){
@@ -1001,7 +1161,8 @@ function addChat(name,txt,ch){
 // RESULT
 // ============================================
 function renderResult(d){
-  showS('s-result');const w=d.winner;
+  showS('s-result');stopBgm();showHelpBtn(false);
+  const w=d.winner;
   document.getElementById('res-ico').textContent=w==='wolf'?'🐺':'🎉';
   document.getElementById('res-tit').textContent=w==='wolf'?'Sói thắng!':'Dân làng thắng!';
   document.getElementById('res-tit').style.color=w==='wolf'?'var(--rg)':'var(--grn)';
@@ -1023,7 +1184,10 @@ async function backToLobby(){
   chatLoaded={};lastLogCnt=0;lastPhase='';seerLog=[];guardLog=[];wolfChatOn=false;wolfUnread=0;chatTab='v';
   document.getElementById('cm-v').innerHTML='';document.getElementById('cm-w').innerHTML='';
   document.getElementById('tab-w').style.display='none';syncChat();
-  if(dayTmr)clearInterval(dayTmr);if(nightTmr)clearInterval(nightTmr);showS('s-lobby');
+  if(dayTmr)clearInterval(dayTmr);if(nightTmr)clearInterval(nightTmr);
+  stopBgm();showHelpBtn(false);
+  document.getElementById('help-ov').classList.remove('on');
+  showS('s-lobby');
 }
 
 // ============================================
