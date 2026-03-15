@@ -158,6 +158,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div id="aarea"></div>
     <div class="cd"><div class="ct2" style="margin-bottom:8px">📜 Nhật ký</div><div class="gl" id="glog"></div></div>
     <div class="cd sj" id="sj-card" style="display:none"><div class="ct2" style="margin-bottom:8px;color:var(--blu)">👁️ Sổ tay Tiên Tri</div><div class="gl" id="sj-log" style="background:rgba(41,128,185,.08)"></div></div>
+    <div class="cd" id="gj-card" style="display:none;border-color:rgba(39,174,96,.3);background:linear-gradient(135deg,var(--c1),rgba(39,174,96,.05))"><div class="ct2" style="margin-bottom:8px;color:var(--grn)">🛡️ Sổ tay Bảo Vệ</div><div class="gl" id="gj-log" style="background:rgba(39,174,96,.08)"></div></div>
     <div class="cb">
       <div class="chtabs"><button class="cht on" id="tab-v" onclick="swChat('v')">💬 Làng</button><button class="cht" id="tab-w" onclick="swChat('w')" style="display:none">🐺 Sói</button></div>
       <div class="cm" id="cm-v"></div>
@@ -208,7 +209,7 @@ const SETUPS={
 };
 
 let db,myId,myName='',roomCode='',roomRef,gameState,isHost=false;
-let unsubs=[],chatLoaded={},lastPhase='',lastLogCnt=0,seerLog=[];
+let unsubs=[],chatLoaded={},lastPhase='',lastLogCnt=0,seerLog=[],guardLog=[];
 let rcfg={SoiThuong:2,BaoVe:1,TienTri:1,PhuThuy:0,ThoSan:0,DanLang:0};
 let dayTmr,wolfChatOn=false,chatTab='v',wolfUnread=0;
 
@@ -298,7 +299,7 @@ function listen(){
       // HOST resolves phases even if dead
       if(isHost){
         if(d.phase==='night')chkNightDone(d);
-        else if(d.phase==='day_vote')chkVoteDone(d);
+        else if(d.phase==='day_vote')resolveVotes(d);
       }
     }
     else if(d.state==='finished'){gameState=d;renderResult(d);}
@@ -398,10 +399,10 @@ function renderGame(d){
   tmr.style.display='none';
   if(p==='night'){h.className='ph phn';t.textContent=`🌙 Đêm ${d.nightNum}`;s.textContent='Làng chìm vào giấc ngủ...';}
   else if(p==='day_announce'){h.className='ph phd';t.textContent=`☀️ Ngày ${d.dayNum||d.nightNum}`;s.textContent='Bình minh lên...';}
-  else if(p==='day_discuss'){h.className='ph phd';t.textContent=`💬 Thảo luận`;s.textContent='Dùng chat để thảo luận';tmr.style.display='inline-flex';startDTmr(d);}
-  else if(p==='day_vote'){h.className='ph phd';t.textContent=`🗳️ Bỏ phiếu`;s.textContent='Chọn người nghi là Sói!';}
+  else if(p==='day_discuss'){h.className='ph phd';t.textContent=`💬 Thảo luận & Bỏ phiếu`;s.textContent='Chat thảo luận + vote bên dưới. Hết giờ = tự bỏ qua.';tmr.style.display='inline-flex';startDTmr(d);}
+  else if(p==='day_vote'){h.className='ph phd';t.textContent=`🗳️ Đang xử lý phiếu...`;s.textContent='';}
   else if(p==='hunter_shoot'){h.className='ph phd';t.textContent='🏹 Thợ Săn!';s.textContent='Bắn 1 phát cuối!';}
-  renderAction(d);renderGP(d);renderLog(d);renderSJ();
+  renderAction(d);renderGP(d);renderLog(d);renderSJ();renderGJ();
   chkSnd(p);updateWT(d);
 }
 
@@ -414,8 +415,8 @@ function renderAction(d){
   }
   if(p==='night')renderNight(d,mr,a);
   else if(p==='day_announce')a.innerHTML='<div class="na"><h3>☀️ Bình minh</h3><p>Xem nhật ký...</p><div class="sp"></div></div>';
-  else if(p==='day_discuss')a.innerHTML='<div class="na"><h3>💬 Thảo luận</h3><p>Dùng chat thảo luận. Hết giờ → bỏ phiếu.</p></div>';
-  else if(p==='day_vote')renderVote(d,a);
+  else if(p==='day_discuss')renderDiscussVote(d,a);
+  else if(p==='day_vote')a.innerHTML='<div class="wm">⏳ Đang xử lý kết quả...</div>';
   else if(p==='hunter_shoot')renderHunter(d,a);
 }
 
@@ -461,8 +462,13 @@ async function nAct(action,target){
     const name=gameState.players[target].name;
     toast(`👁️ ${name} là ${isW?'🐺 SÓI!':'👨‍🌾 Không phải Sói'}`);
     seerLog.push({night:gameState.nightNum,name,avatar:gameState.players[target].avatar,isWolf:isW});
-    renderSJ();
   }
+  if(action==='guard'&&target!=='skip'&&gameState){
+    const name=gameState.players[target].name;
+    toast(`🛡️ Đã bảo vệ ${name}`);
+    guardLog.push({night:gameState.nightNum,name,avatar:gameState.players[target].avatar,isSelf:target===myId});
+  }
+  renderSJ();renderGJ();
 }
 
 // ============================================
@@ -551,7 +557,7 @@ function checkWin(al,roles){
 }
 
 // ============================================
-// DAY
+// DAY (Discuss + Vote merged)
 // ============================================
 function startDTmr(d){
   if(dayTmr)clearInterval(dayTmr);
@@ -560,27 +566,70 @@ function startDTmr(d){
     const left=Math.max(0,Math.round((d.dayDeadline-Date.now())/1000));
     const el=document.getElementById('tmr-txt');if(el)el.textContent=left;
     const tm=document.getElementById('ptmr');if(tm)tm.classList.toggle('warn',left<=15);
-    if(left<=0&&isHost){clearInterval(dayTmr);roomRef.update({phase:'day_vote',votes:{}});}
+    if(left<=0&&isHost){
+      clearInterval(dayTmr);
+      // Auto-skip for anyone who hasn't voted
+      autoSkipAndResolve();
+    }
   },1000);
 }
 
-function renderVote(d,a){
+async function autoSkipAndResolve(){
+  const snap=await roomRef.once('value');
+  const d=snap.val();
+  if(!d||d.phase!=='day_discuss')return;
+  const al=d.alive||{},votes=d.votes||{};
+  const ids=Object.keys(al).filter(id=>al[id]);
+  const updates={};
+  ids.forEach(id=>{if(!votes[id])updates['votes/'+id]='skip';});
+  if(Object.keys(updates).length)await roomRef.update(updates);
+  // Small delay to let Firebase sync, then resolve
+  setTimeout(async()=>{
+    const snap2=await roomRef.once('value');
+    resolveVotes(snap2.val());
+  },500);
+}
+
+function renderDiscussVote(d,a){
   const votes=d.votes||{},mv=votes[myId],amA=d.alive[myId];
   const ap=Object.entries(d.players).filter(([id])=>d.alive[id]);
   const vcs={};Object.values(votes).forEach(v=>{if(v)vcs[v]=(vcs[v]||0)+1;});
-  a.innerHTML=`<div class="na"><h3>🗳️ Bỏ phiếu treo cổ</h3><p>Chọn người nghi là Sói</p><div class="vg">
-    ${ap.map(([id,p])=>`<button class="vb ${mv===id?'sel':''} ${!amA?'dead':''}" onclick="dVote('${id}')" ${!amA?'disabled':''}><span class="va2">${p.avatar}</span><span class="vn2">${esc(p.name)}</span><span class="vc2">${vcs[id]||0} phiếu</span></button>`).join('')}
-    <button class="vb ${mv==='skip'?'sel':''} ${!amA?'dead':''}" onclick="dVote('skip')" ${!amA?'disabled':''}><span class="va2">⏭️</span><span class="vn2">Bỏ qua</span><span class="vc2">${vcs['skip']||0}</span></button>
-  </div></div>`;
+  const totalAlive=ap.length;
+  const totalVoted=Object.keys(votes).filter(id=>d.alive[id]).length;
+
+  a.innerHTML=`<div class="na">
+    <h3>💬 Thảo luận & 🗳️ Bỏ phiếu</h3>
+    <p>Chat thảo luận ở dưới. Chọn vote khi sẵn sàng.<br><span style="color:var(--gld)">${totalVoted}/${totalAlive} đã vote</span>${mv?' — ✅ Bạn đã vote':''}</p>
+    <div class="vg">
+    ${ap.map(([id,p])=>`<button class="vb ${mv===id?'sel':''} ${!amA?'dead':''}" onclick="dVote('${id}')" ${!amA||mv?'disabled':''}><span class="va2">${p.avatar}</span><span class="vn2">${esc(p.name)}</span><span class="vc2">${vcs[id]||0} phiếu</span></button>`).join('')}
+    <button class="vb ${mv==='skip'?'sel':''} ${!amA?'dead':''}" onclick="dVote('skip')" ${!amA||mv?'disabled':''}><span class="va2">⏭️</span><span class="vn2">Bỏ qua</span><span class="vc2">${vcs['skip']||0}</span></button>
+    </div>
+  </div>`;
 }
 
-async function dVote(t){sfx.click();await roomRef.child('votes/'+myId).set(t);}
+async function dVote(t){
+  sfx.click();
+  await roomRef.child('votes/'+myId).set(t);
+  // Check if all voted → resolve immediately
+  if(isHost){
+    setTimeout(async()=>{
+      const snap=await roomRef.once('value');
+      const d=snap.val();
+      if(!d||d.phase!=='day_discuss')return;
+      const al=d.alive||{},votes=d.votes||{};
+      const ids=Object.keys(al).filter(id=>al[id]);
+      if(ids.every(id=>votes[id])){
+        if(dayTmr)clearInterval(dayTmr);
+        resolveVotes(d);
+      }
+    },300);
+  }
+}
 
-async function chkVoteDone(d){
-  if(!isHost||d.phase!=='day_vote')return;
+async function resolveVotes(d){
+  if(!isHost||!d||(d.phase!=='day_discuss'&&d.phase!=='day_vote'))return;
   const al=d.alive||{},votes=d.votes||{};
   const ids=Object.keys(al).filter(id=>al[id]);
-  if(!ids.every(id=>votes[id]))return;
 
   const vcs={};ids.forEach(id=>{const v=votes[id];if(v)vcs[v]=(vcs[v]||0)+1;});
   const sorted=Object.entries(vcs).filter(([k])=>k!=='skip').sort((a,b)=>b[1]-a[1]);
@@ -590,7 +639,6 @@ async function chkVoteDone(d){
     const elim=sorted[0][0];newAlive[elim]=false;
     logs.push({text:`🪢 ${d.players[elim].name} đã bị treo cổ!`,type:'vote'});
 
-    // Hunter hanged → gets to shoot
     if(d.roles[elim]==='ThoSan'){
       const w=checkWin(newAlive,d.roles);
       if(w){await roomRef.update({alive:newAlive,log:logs,state:'finished',winner:w});return;}
@@ -654,6 +702,13 @@ function renderSJ(){
   if(!gameState||gameState.roles[myId]!=='TienTri'||!seerLog.length){card.style.display='none';return;}
   card.style.display='block';
   document.getElementById('sj-log').innerHTML=seerLog.map(s=>`<div class="le" style="color:${s.isWolf?'var(--rg)':'var(--grn)'};display:flex;align-items:center;gap:8px;padding:8px 4px"><span style="font-size:.75rem;color:var(--dim);min-width:50px">Đêm ${s.night}</span><span>${s.avatar}</span><span style="font-weight:700">${esc(s.name)}</span><span style="margin-left:auto;font-weight:800">${s.isWolf?'🐺 SÓI':'👨‍🌾 Dân'}</span></div>`).join('');
+}
+
+function renderGJ(){
+  const card=document.getElementById('gj-card');
+  if(!gameState||gameState.roles[myId]!=='BaoVe'||!guardLog.length){card.style.display='none';return;}
+  card.style.display='block';
+  document.getElementById('gj-log').innerHTML=guardLog.map(g=>`<div class="le" style="color:var(--grn);display:flex;align-items:center;gap:8px;padding:8px 4px"><span style="font-size:.75rem;color:var(--dim);min-width:50px">Đêm ${g.night}</span><span>${g.avatar}</span><span style="font-weight:700">${esc(g.name)}${g.isSelf?' (Mình)':''}</span><span style="margin-left:auto">🛡️</span></div>`).join('');
 }
 
 // ============================================
@@ -722,7 +777,8 @@ async function backToLobby(){
   if(isHost&&roomRef)await roomRef.update({state:'lobby',roles:null,alive:null,phase:null,nightNum:null,dayNum:null,acts:null,votes:null,log:null,chat:null,wolf_chat:null,winner:null,witchSave:null,witchKill:null,guardLast:null,hunterPin:null,hunterPending:null,wolfTarget:null,dayDeadline:null});
   document.getElementById('rcard').style.display='none';
   document.getElementById('sj-card').style.display='none';
-  chatLoaded={};lastLogCnt=0;lastPhase='';seerLog=[];wolfChatOn=false;wolfUnread=0;chatTab='v';
+  document.getElementById('gj-card').style.display='none';
+  chatLoaded={};lastLogCnt=0;lastPhase='';seerLog=[];guardLog=[];wolfChatOn=false;wolfUnread=0;chatTab='v';
   document.getElementById('cm-v').innerHTML='';document.getElementById('cm-w').innerHTML='';
   document.getElementById('tab-w').style.display='none';syncChat();
   if(dayTmr)clearInterval(dayTmr);showS('s-lobby');
