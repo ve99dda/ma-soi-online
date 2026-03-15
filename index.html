@@ -214,6 +214,21 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 <script>
 // ============================================
+// CẤU HÌNH FIREBASE (Dành cho bản host trên GitHub)
+// ** QUAN TRỌNG **
+// Nếu bạn muốn dùng Firebase của riêng mình, hãy thay đổi các thông số dưới đây.
+// ============================================
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDQwnQXuaQQ4xVac9IAHnOPydG2YkfeKBc",
+  authDomain: "soihoang-342fd.firebaseapp.com",
+  databaseURL: "https://soihoang-342fd-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "soihoang-342fd",
+  storageBucket: "soihoang-342fd.firebasestorage.app",
+  messagingSenderId: "1009582776681",
+  appId: "1:1009582776681:web:daa27ea8a56d064b61ddf8"
+};
+
+// ============================================
 // MA SÓI ONLINE v3 — FULL RULES
 // ============================================
 
@@ -252,8 +267,7 @@ let seerLog=[];
 // ============================================
 function initFB(){
   try{
-    const c={apiKey:"AIzaSyDQwnQXuaQQ4xVac9IAHnOPydG2YkfeKBc",authDomain:"soihoang-342fd.firebaseapp.com",databaseURL:"https://soihoang-342fd-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"soihoang-342fd",storageBucket:"soihoang-342fd.firebasestorage.app",messagingSenderId:"1009582776681",appId:"1:1009582776681:web:daa27ea8a56d064b61ddf8"};
-    if(!firebase.apps.length)firebase.initializeApp(c);
+    if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
     db=firebase.database();return true;
   }catch(e){return false;}
 }
@@ -357,7 +371,7 @@ function listenRoom(){
       if(document.getElementById('s-lobby').classList.contains('active')||document.getElementById('s-result').classList.contains('active')){showS('s-game');showRole(d);}
       renderGame(d);
       // Only start wolf chat after role is confirmed as wolf
-      if(!wolfChatActive&&isWolf())startWolfChat();
+      if(!wolfChatActive&&isWolf(d))startWolfChat();
     }
     else if(d.state==='finished'){gameState=d;renderResult(d);}
   });
@@ -477,7 +491,13 @@ function renderGame(d){
 
   renderAction(d);renderGP(d);renderLog(d);
   chkPSnd(d.phase);
-  updateWolfTab();
+  updateWolfTab(d);
+  // HOST MUST resolve phases even if dead!
+  if(isHost){
+    if(d.phase==='night')chkNightDone(d);
+    else if(d.phase==='cupid_night')chkCupidDone(d);
+    else if(d.phase==='day_vote')chkVoteDone(d);
+  }
 }
 
 function renderAction(d){
@@ -868,10 +888,11 @@ function renderSeerJournal(){
 let activeChatTab='village';
 let wolfChatUnread=0;
 
-function isWolf(){
-  if(!gameState||!gameState.roles||!myId)return false;
-  const r=gameState.roles[myId];
-  return r==='wolf'||r==='white_wolf'||(r==='half_wolf'&&gameState.halfWolfTurned);
+function isWolf(d){
+  const data=d||gameState;
+  if(!data||!data.roles||!myId)return false;
+  const r=data.roles[myId];
+  return r==='wolf'||r==='white_wolf'||(r==='half_wolf'&&data.halfWolfTurned);
 }
 
 function isNightPhase(){
@@ -880,15 +901,16 @@ function isNightPhase(){
   return p==='night'||p==='cupid_night';
 }
 
-function updateWolfTab(){
+function updateWolfTab(d){
+  const data=d||gameState;
   const tab=document.getElementById('tab-wolf');
   const wolfDiv=document.getElementById('cmsg-wolf');
-  // HARD CHECK: non-wolves never see wolf tab or wolf messages
-  if(!isWolf()){
+  const wolf=isWolf(data);
+  if(!wolf){
     tab.style.display='none';
     wolfDiv.style.display='none';
-    wolfDiv.innerHTML=''; // Clear any leaked messages
-    if(activeChatTab==='wolf'){activeChatTab='village';syncChatUI();}
+    wolfDiv.innerHTML='';
+    if(activeChatTab==='wolf'){activeChatTab='village';syncChatUI(data);}
     return;
   }
   tab.style.display='block';
@@ -899,7 +921,8 @@ function updateWolfTab(){
   }
 }
 
-function syncChatUI(){
+function syncChatUI(d){
+  const data=d||gameState;
   const t=activeChatTab;
   document.getElementById('tab-village').classList.toggle('active',t==='village');
   document.getElementById('tab-village').classList.remove('wolf-tab');
@@ -907,13 +930,11 @@ function syncChatUI(){
   wt.classList.toggle('active',t==='wolf');
   if(t==='wolf')wt.classList.add('wolf-tab');else wt.classList.remove('wolf-tab');
   document.getElementById('cmsg').style.display=t==='village'?'block':'none';
-  // Wolf div: only show if wolf AND on wolf tab
-  document.getElementById('cmsg-wolf').style.display=(t==='wolf'&&isWolf())?'block':'none';
+  document.getElementById('cmsg-wolf').style.display=(t==='wolf'&&isWolf(data))?'block':'none';
   document.getElementById('cinp').placeholder=t==='wolf'?'Nhắn cho đồng bọn Sói...':'Nhắn tin...';
 }
 
 function switchChat(tab){
-  // HARD BLOCK: non-wolves cannot switch to wolf tab
   if(tab==='wolf'&&!isWolf()){toast('⛔ Bạn không phải Sói!');return;}
   activeChatTab=tab;
   if(tab==='wolf'){wolfChatUnread=0;}
@@ -924,7 +945,6 @@ function switchChat(tab){
 function sendChat(){
   const inp=document.getElementById('cinp'),txt=inp.value.trim();
   if(!txt||!roomRef)return;
-  // Double check: only wolves can send to wolf_chat
   if(activeChatTab==='wolf'){
     if(!isWolf()){toast('⛔');return;}
     roomRef.child('wolf_chat').push({name:myName,text:txt,time:Date.now(),playerId:myId});
@@ -936,7 +956,6 @@ function sendChat(){
 
 function addChat(name,txt,channel){
   if(channel==='wolf'){
-    // TRIPLE CHECK: absolutely no wolf messages for non-wolves
     if(!isWolf())return;
     const el=document.getElementById('cmsg-wolf'),d=document.createElement('div');
     d.className='cmsg';
